@@ -1,0 +1,242 @@
+# setup-debian-trixie.sh
+
+Script de configuración inicial para **Debian 13 (trixie)** con KDE Plasma.
+Automatiza la configuración de repositorios, la actualización del sistema,
+la instalación de un set de paquetes de desarrollo/multimedia/sistema, el
+microcode correcto según el fabricante de CPU, y añade el remoto de Flathub.
+
+---
+
+## Índice
+
+- [Qué hace](#qué-hace)
+- [Requisitos previos: dejar sudo listo](#requisitos-previos-dejar-sudo-listo)
+- [Requisitos](#requisitos)
+- [Uso](#uso)
+- [Qué se instala](#qué-se-instala)
+- [Detalles importantes](#detalles-importantes)
+- [Después de ejecutarlo](#después-de-ejecutarlo)
+- [Solución de problemas](#solución-de-problemas)
+- [Idempotencia](#idempotencia)
+- [Licencia](#licencia)
+
+---
+
+## Qué hace
+
+El script ejecuta, en orden, los siguientes pasos:
+
+1. Comprueba que no se ejecuta como `root` y que el sistema usa `apt`.
+2. Avisa si el codename detectado no es `trixie` (permite continuar bajo confirmación).
+3. Escribe `/etc/apt/sources.list.d/debian.sources` en formato **deb822**
+   (repos `main`, `contrib`, `non-free`, `non-free-firmware` para trixie,
+   trixie-security y trixie-backports). **No sobrescribe** el archivo si ya existe.
+4. Ejecuta `apt update` y, opcionalmente, `apt full-upgrade`.
+5. Detecta el fabricante de la CPU (`Intel`/`AMD`) para instalar el paquete
+   de microcode correspondiente.
+6. Instala un conjunto de paquetes (ver [tabla completa](#qué-se-instala)).
+7. Añade el remoto de **Flathub** si no está ya configurado.
+8. Muestra notas finales (p. ej. sobre `fd-find`).
+
+---
+
+## Requisitos previos: dejar sudo listo
+
+**Importante:** Debian **no** configura `sudo` automáticamente en todos los
+casos — y esto no depende de si elegiste una instalación mínima o completa
+(con escritorio, etc.). Depende de un paso concreto del instalador:
+
+- Si **dejaste en blanco** la contraseña de `root` durante la instalación,
+  Debian instala `sudo` y da privilegios de administrador a tu usuario
+  automáticamente.
+- Si **pusiste una contraseña a `root`** (como es habitual), Debian asume
+  que vas a administrar el sistema entrando como root directamente, y
+  **no instala `sudo` ni añade tu usuario a ningún grupo** — da igual que
+  hayas instalado el sistema completo con KDE Plasma u otro escritorio.
+
+Es decir: es muy probable que necesites este paso aunque tu instalación
+sea "completa", si en su momento configuraste una contraseña de root.
+El script lo comprueba y se detiene con instrucciones si falta algo, pero
+es mejor dejarlo resuelto antes de ejecutarlo.
+
+Si tras instalar Debian solo tienes la contraseña de `root`, haz esto
+**una única vez**, antes de usar el script:
+
+```bash
+# 1. Entra como root
+su -
+
+# 2. Instala sudo
+apt update
+apt install sudo
+
+# 3. Añade tu usuario normal al grupo sudo (sustituye TU_USUARIO)
+usermod -aG sudo TU_USUARIO
+
+# 4. Sal de la sesión de root
+exit
+```
+
+Después, **cierra sesión de tu usuario y vuelve a entrar** (o reinicia),
+para que el cambio de grupo se aplique. Puedes comprobar que todo está
+en orden con:
+
+```bash
+groups
+# debería incluir "sudo" en la lista
+
+sudo -v
+# debería pedirte tu contraseña de usuario (no la de root) y no dar error
+```
+
+Si `sudo -v` funciona sin errores, ya puedes ejecutar `setup-debian-trixie.sh`
+con normalidad.
+
+> Nota: si durante la instalación **dejaste en blanco** la contraseña de
+> root, es muy probable que `sudo` ya esté listo y puedas saltarte este
+> apartado — el script lo detectará automáticamente en cualquier caso.
+
+---
+
+## Requisitos
+
+- Debian 13 (trixie) — probado en esta versión. Otras versiones basadas en
+  APT pueden funcionar parcialmente, pero no está garantizado.
+- `sudo` instalado y usuario en el grupo `sudo` (ver apartado anterior).
+- Conexión a internet (repos oficiales de Debian y Flathub).
+- Entorno KDE Plasma si quieres aprovechar `plasma-discover-backend-flatpak`
+  (el resto de paquetes no dependen de KDE).
+
+---
+
+## Uso
+
+```bash
+chmod +x setup-debian-trixie.sh
+
+# Modo interactivo (por defecto): pide confirmación en cada paso relevante
+./setup-debian-trixie.sh
+
+# Modo no interactivo: asume "sí" en todas las confirmaciones
+./setup-debian-trixie.sh -y
+# o
+./setup-debian-trixie.sh --yes
+
+# Ayuda
+./setup-debian-trixie.sh -h
+```
+
+En modo `-y`, además se exporta `DEBIAN_FRONTEND=noninteractive` para evitar
+que `apt`/`debconf` se queden esperando input (por ejemplo, avisos de
+licencia de firmware no libre). Esto también silencia **cualquier otro**
+prompt de debconf durante la instalación — revisa la salida después si
+usas este modo.
+
+> **Importante:** no ejecutes este script con `curl ... | bash` sin `-y`.
+> Las confirmaciones (`read -rp`) necesitan una entrada estándar interactiva
+> de terminal; si la entrada estándar viene de una tubería, la primera
+> pregunta hará fallar el script. Descarga el archivo primero y ejecútalo
+> localmente, o usa `-y` si de verdad quieres modo no interactivo.
+
+Al principio, el script también comprueba que `sudo` esté instalado y
+valida tus credenciales con `sudo -v` antes de tocar nada. Si algo falla
+ahí, verás un mensaje claro señalando este README en vez de un error de
+`sudo` a mitad de instalación.
+
+---
+
+## Qué se instala
+
+| Categoría | Paquetes |
+|---|---|
+| Control de versiones / descargas | `git`, `git-lfs`, `curl`, `wget` |
+| Compresión | `unzip`, `zip`, `7zip` |
+| Sistema / diagnóstico | `btop`, `fastfetch`, `tree`, `jq`, `ripgrep`, `fd-find`, `pciutils`, `usbutils`, `lshw`, `dmidecode`, `inxi`, `hwinfo`, `lm-sensors`, `acpi` |
+| Desarrollo / compilación | `build-essential`, `gcc`, `g++`, `make`, `cmake`, `ninja-build`, `pkg-config`, `autoconf`, `automake`, `libtool`, `openssh-client` |
+| Multimedia | `ffmpeg`, `gstreamer1.0-libav`, `gstreamer1.0-plugins-good/bad/ugly`, `pavucontrol` |
+| Firmware | `firmware-linux` (metapaquete, ver nota abajo) |
+| Flatpak / KDE | `flatpak`, `plasma-discover-backend-flatpak` |
+| Microcode | `intel-microcode` o `amd64-microcode`, según CPU detectada |
+
+---
+
+## Detalles importantes
+
+### Repositorios no libres
+
+El `sources.list` generado activa los componentes `contrib`, `non-free` y
+`non-free-firmware`. Si te importa distribuir software estrictamente libre,
+edita la sección 2 del script antes de ejecutarlo.
+
+### `firmware-linux`
+
+Es un metapaquete que instala **todo** el firmware no libre disponible
+(`firmware-linux-nonfree`), no solo el de tu hardware concreto. Es cómodo
+pero añade volumen innecesario. Alternativa más quirúrgica:
+
+```bash
+lspci -k          # identifica el hardware y el driver en uso
+sudo apt install firmware-misc-nonfree firmware-iwlwifi   # ejemplo
+```
+
+### `fd-find`
+
+Debian lo empaqueta como binario `fdfind` (no `fd`, por conflicto de
+nombre con otro paquete). Para tener el comando `fd`:
+
+```bash
+mkdir -p ~/.local/bin
+ln -s "$(command -v fdfind)" ~/.local/bin/fd
+```
+
+Asegúrate de que `~/.local/bin` esté en tu `$PATH`.
+
+### `apt full-upgrade`
+
+Se ofrece como paso opcional tras cambiar/crear el `sources.list`. Es
+recomendable aceptarlo la primera vez que ejecutas el script en un sistema
+recién instalado o con repos distintos, para partir de un estado consistente.
+
+---
+
+## Después de ejecutarlo
+
+- Puede que necesites **reiniciar sesión o el sistema** para que el
+  microcode/firmware surta efecto completamente.
+- Verifica Flathub:
+  ```bash
+  flatpak remote-list
+  ```
+- Verifica el microcode instalado:
+  ```bash
+  dmesg | grep -i microcode
+  ```
+
+---
+
+## Solución de problemas
+
+| Problema | Causa probable | Solución |
+|---|---|---|
+| `Error: "sudo" no está instalado` | Instalación mínima de Debian | Ver [Requisitos previos](#requisitos-previos-dejar-sudo-listo) |
+| `el usuario no pertenece al grupo "sudo"` | No se añadió el usuario al grupo, o no se ha reiniciado sesión tras añadirlo | `usermod -aG sudo TU_USUARIO` como root, luego cerrar sesión y volver a entrar |
+| `apt update` falla | Sin conexión o mirror caído | Reintenta o cambia de mirror en el `sources.list` |
+| El script se detiene pidiendo input inesperado | Prompt de debconf (p. ej. licencia de firmware) | Usa `-y` para modo no interactivo, o responde manualmente |
+| `fd: command not found` tras instalar | Es normal, ver [sección `fd-find`](#fd-find) | Crea el symlink indicado |
+| Aviso de codename distinto de `trixie` | Estás en otra versión/derivada de Debian | Revisa compatibilidad antes de continuar |
+
+---
+
+## Idempotencia
+
+El script se puede volver a ejecutar sin problema:
+
+- No sobrescribe `debian.sources` si ya existe.
+- `apt install` sobre paquetes ya instalados no hace nada.
+- Flathub no se vuelve a añadir si ya está configurado.
+
+---
+
+## Licencia
+
+MIT
