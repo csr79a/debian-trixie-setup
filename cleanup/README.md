@@ -74,9 +74,10 @@ chmod +x cleanup-debian-trixie.sh
 
 | Grupo | Paquetes | Notas |
 |---|---|---|
-| Suite PIM / Kontact | `kmail`, `kaddressbook`, `ktnef`, `kdepim-themeeditors`, `pim-sieve-editor`, `pim-data-exporter` | Todos comparten árbol de dependencias con Akonadi. `ktnef` es un paquete de transición que hoy en día vive dentro de `kmail`. `kdepim-themeeditors` es el paquete real detrás de "Editor de temas de Contact" **y** "Editor de temas de encabezados de KMail" — por eso una sola entrada cubre dos de las apps que mencionaste. |
+| Suite PIM / Kontact | `kmail`, `kaddressbook`, `ktnef`, `kdepim-themeeditors`, `pim-sieve-editor`, `pim-data-exporter`, `korganizer`, `akregator` | Todos comparten árbol de dependencias con Akonadi (calendario y lector de RSS incluidos). `ktnef` es un paquete de transición que hoy en día vive dentro de `kmail`. `kdepim-themeeditors` es el paquete real detrás de "Editor de temas de Contact" **y** "Editor de temas de encabezados de KMail". |
 | Accesibilidad | `kmousetool`, `kmouth`, `kontrast` | Independientes del grupo PIM: **no** se eliminan solos al quitar KMail, por eso van en grupo aparte. |
 | Konqueror | `konqueror` | Navegador/gestor de archivos histórico de KDE, sin relación con los otros grupos. |
+| xterm | `xterm` | Emulador de terminal genérico de X11, no es una app de Plasma ni depende de los grupos anteriores; va en su propio grupo. |
 | ImageMagick (opcional, `--imagemagick`) | `imagemagick` | Ver aviso abajo. |
 
 Los nombres de paquete están verificados contra el repositorio de Debian

@@ -164,6 +164,8 @@ PIM_GROUP=(
   kdepim-themeeditors
   pim-sieve-editor
   pim-data-exporter
+  korganizer
+  akregator
 )
 
 # GRUPO 2 — Accesibilidad
@@ -179,6 +181,14 @@ ACCESSIBILITY_GROUP=(
 # grupos anteriores.
 KONQUEROR_GROUP=(
   konqueror
+)
+
+# GRUPO 3b — xterm
+# Emulador de terminal genérico de X11, nada que ver con KDE ni con los
+# grupos anteriores. Suele venir como dependencia de meta-paquetes de
+# X11/escritorio, no de Plasma en sí, así que va en su propio grupo.
+XTERM_GROUP=(
+  xterm
 )
 
 # GRUPO 4 (opcional, --imagemagick) — ImageMagick
@@ -200,9 +210,10 @@ echo "Este script revisará, grupo por grupo, aplicaciones de KDE Plasma"
 echo "instaladas por defecto en Debian que muchos usuarios no llegan a usar."
 echo "No se eliminará nada sin confirmación explícita de cada grupo."
 
-remove_group "Suite PIM / Kontact (KMail, KAddressBook, KTnef, editores de tema, Sieve, exportador PIM)" "${PIM_GROUP[@]}"
+remove_group "Suite PIM / Kontact (KMail, KAddressBook, KTnef, editores de tema, Sieve, exportador PIM, KOrganizer, Akregator)" "${PIM_GROUP[@]}"
 remove_group "Accesibilidad (KMouseTool, KMouth, Kontrast)" "${ACCESSIBILITY_GROUP[@]}"
 remove_group "Konqueror" "${KONQUEROR_GROUP[@]}"
+remove_group "xterm" "${XTERM_GROUP[@]}"
 
 if [[ "$INCLUDE_IMAGEMAGICK" -eq 1 ]]; then
   echo
