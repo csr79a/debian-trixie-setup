@@ -5,7 +5,8 @@ Automatiza la configuración de repositorios, la actualización del sistema,
 la instalación de un set de paquetes de desarrollo/multimedia/sistema
 (incluyendo Synaptic y GDebi como gestores de paquetes gráficos), el
 microcode correcto según el fabricante de CPU, un dispositivo zram de 8 GB
-de swap comprimido en RAM (opcional), y añade el remoto de Flathub.
+de swap comprimido en RAM (opcional), la sustitución de Firefox ESR por el
+Firefox oficial de Mozilla (opcional), y añade el remoto de Flathub.
 
 ---
 
@@ -17,6 +18,7 @@ de swap comprimido en RAM (opcional), y añade el remoto de Flathub.
 - [Uso](#uso)
 - [Qué se instala](#qué-se-instala)
 - [ZRAM: swap comprimido en RAM (8 GB)](#zram-swap-comprimido-en-ram-8-gb)
+- [Firefox oficial de Mozilla](#firefox-oficial-de-mozilla)
 - [Detalles importantes](#detalles-importantes)
 - [Después de ejecutarlo](#después-de-ejecutarlo)
 - [Solución de problemas](#solución-de-problemas)
@@ -42,7 +44,9 @@ El script ejecuta, en orden, los siguientes pasos:
 7. Añade el remoto de **Flathub** si no está ya configurado.
 8. Pregunta si quieres configurar un dispositivo **zram** de 8 GB de swap
    comprimido en RAM (ver [sección dedicada](#zram-swap-comprimido-en-ram-8-gb)).
-9. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic/GDebi y zram).
+9. Pregunta si quieres sustituir Firefox ESR por el **Firefox oficial de
+   Mozilla** (ver [sección dedicada](#firefox-oficial-de-mozilla)).
+10. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic/GDebi, zram y Firefox).
 
 ---
 
@@ -215,6 +219,69 @@ sudo apt remove zram-tools
 # Recuperar la configuración previa (si la había) desde el backup
 sudo cp /etc/default/zramswap.bak.<fecha> /etc/default/zramswap
 sudo systemctl restart zramswap
+```
+
+---
+
+## Firefox oficial de Mozilla
+
+### Por qué existe este paso
+
+Debian, por motivos de licencia de marca, no distribuye "Firefox" a
+secas: instala **`firefox-esr`** (versión de soporte extendido, con
+ciclo de actualización más lento y unos meses por detrás de la versión
+"release" que usan la mayoría de usuarios de otras distros). Este paso,
+**opcional y con confirmación propia**, lo sustituye por el Firefox
+oficial de Mozilla, instalado desde el repositorio APT que la propia
+Mozilla publica y mantiene.
+
+El procedimiento sigue la [guía oficial de
+Mozilla](https://support.mozilla.org/kb/install-firefox-linux) para
+paquetes `.deb`, con estas adaptaciones respecto al texto original:
+
+- **Se omite todo lo específico de Ubuntu/snap** (fijar `firefox` desde
+  snap, pines de prioridad negativa para el paquete snap, etc.) — no
+  aplica en Debian.
+- **Formato de repositorio detectado automáticamente**: usa el formato
+  moderno **deb822** (`mozilla.sources`) en trixie y posteriores, o el
+  formato clásico de una línea (`mozilla.list`) si el script se está
+  ejecutando en un codename anterior (p. ej. bookworm) tras aceptar el
+  aviso de compatibilidad de la sección 1.
+- **Verificación de huella digital no omitible**: si la huella de la
+  clave descargada no coincide exactamente con la publicada por Mozilla
+  (`35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3`), el script **aborta este
+  paso sin añadir el repositorio ni instalar nada**, y borra la clave
+  descargada. Es la misma comprobación de seguridad que recomienda
+  Mozilla, simplemente automatizada.
+
+### Qué hace el script exactamente
+
+1. Si `firefox-esr` (y/o `firefox-esr-l10n-es`) está instalado, lo quita.
+2. Crea `/etc/apt/keyrings` si no existe y descarga la clave de firma de
+   Mozilla ahí.
+3. Verifica la huella digital de esa clave contra el valor oficial.
+4. Si coincide, añade el repositorio de Mozilla (`mozilla.sources` o
+   `mozilla.list`, según el caso) y un fichero de prioridad
+   (`/etc/apt/preferences.d/mozilla`) para que sus paquetes tengan
+   preferencia frente a cualquier otro repo que también publique algo
+   llamado `firefox`.
+5. Ejecuta `apt update` e instala `firefox`.
+6. Pregunta, aparte, si quieres instalar también el paquete de idioma
+   español (`firefox-l10n-es`).
+
+### Comprobar y revertir
+
+```bash
+# Comprobar que es la versión de Mozilla (no debería decir "esr")
+firefox --version
+
+# Volver a Firefox ESR de Debian
+sudo apt remove firefox
+sudo rm /etc/apt/sources.list.d/mozilla.sources \
+        /etc/apt/sources.list.d/mozilla.list \
+        /etc/apt/preferences.d/mozilla 2>/dev/null
+sudo apt update
+sudo apt install firefox-esr
 ```
 
 ---

@@ -325,6 +325,120 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# 5c. Firefox oficial de Mozilla (sustituye a Firefox ESR, opcional)
+# ----------------------------------------------------------------------
+#
+# Debian, por motivos de licencia de marca, no distribuye "Firefox" tal
+# cual: en su lugar trae "firefox-esr" (versión de soporte extendido,
+# de actualización más lenta). Este paso, opcional, lo sustituye por el
+# Firefox oficial de Mozilla (release normal), siguiendo el
+# procedimiento que publica Mozilla para paquetes .deb vía su propio
+# repositorio APT: https://support.mozilla.org/kb/install-firefox-linux
+#
+# Adaptado respecto a la guía original de Mozilla:
+#   - Se omite todo lo específico de Ubuntu/snap (no aplica en Debian).
+#   - Se elige automáticamente el formato de fichero de repositorio
+#     correcto: deb822 (mozilla.sources) para trixie y posteriores, o
+#     el formato clásico de una línea (mozilla.list) para codenames
+#     anteriores (p. ej. bookworm), por si se ejecuta ahí bajo tu
+#     propio riesgo tras el aviso de compatibilidad de la sección 1.
+#   - Se verifica la huella digital de la clave de firma antes de
+#     confiar en ella; si no coincide, se aborta este paso sin tocar
+#     nada más (no se añade el repositorio ni se instala nada).
+
+echo
+if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositorio de Mozilla?"; then
+
+  # 1. Quitar Firefox ESR (y su paquete de idioma español) si están instalados
+  FIREFOX_ESR_PKGS=()
+  for pkg in firefox-esr firefox-esr-l10n-es; do
+    if dpkg -s "$pkg" >/dev/null 2>&1; then
+      FIREFOX_ESR_PKGS+=("$pkg")
+    fi
+  done
+  if [[ ${#FIREFOX_ESR_PKGS[@]} -gt 0 ]]; then
+    echo "Quitando Firefox ESR: ${FIREFOX_ESR_PKGS[*]}"
+    sudo apt remove -y "${FIREFOX_ESR_PKGS[@]}"
+  else
+    echo "Firefox ESR no estaba instalado; se continúa igualmente."
+  fi
+
+  # gpg hace falta para verificar la clave; suele estar ya, pero por si acaso
+  if ! command -v gpg >/dev/null 2>&1; then
+    echo "Instalando gnupg (necesario para verificar la clave de Mozilla)..."
+    sudo apt install -y gnupg
+  fi
+
+  # 2. Clave de firma del repositorio de Mozilla
+  sudo install -d -m 0755 /etc/apt/keyrings
+  wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O- \
+    | sudo tee /etc/apt/keyrings/packages.mozilla.org.asc >/dev/null
+
+  # 3. Verificación de la huella digital (paso de seguridad, no opcional)
+  MOZILLA_EXPECTED_FPR="35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3"
+  MOZILLA_ACTUAL_FPR="$(
+    gpg -n -q --import --import-options import-show \
+      /etc/apt/keyrings/packages.mozilla.org.asc \
+      | awk '/pub/{getline; gsub(/^ +| +$/,""); print; exit}'
+  )"
+
+  if [[ "$MOZILLA_ACTUAL_FPR" == "$MOZILLA_EXPECTED_FPR" ]]; then
+    echo "Huella digital de la clave de Mozilla verificada correctamente."
+    MOZILLA_KEY_OK=1
+  else
+    echo "ERROR: la huella digital de la clave de Mozilla NO coincide." >&2
+    echo "  Esperada: $MOZILLA_EXPECTED_FPR" >&2
+    echo "  Obtenida: ${MOZILLA_ACTUAL_FPR:-<vacía>}" >&2
+    echo "Por seguridad, se aborta este paso: no se añade el repositorio" \
+         "ni se instala Firefox de Mozilla." >&2
+    sudo rm -f /etc/apt/keyrings/packages.mozilla.org.asc
+    MOZILLA_KEY_OK=0
+  fi
+
+  if [[ "$MOZILLA_KEY_OK" -eq 1 ]]; then
+    # 4. Repositorio APT: formato según el codename detectado en la
+    # sección 1 (trixie/posteriores usan deb822; codenames anteriores,
+    # el formato clásico de una línea).
+    if [[ "${VERSION_CODENAME:-trixie}" == "bookworm" || "${VERSION_CODENAME:-trixie}" == "bullseye" ]]; then
+      MOZILLA_LIST="/etc/apt/sources.list.d/mozilla.list"
+      echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
+        | sudo tee "$MOZILLA_LIST" >/dev/null
+      echo "Repositorio de Mozilla escrito en $MOZILLA_LIST (formato clásico)."
+    else
+      MOZILLA_SOURCES="/etc/apt/sources.list.d/mozilla.sources"
+      sudo tee "$MOZILLA_SOURCES" >/dev/null <<'EOF'
+Types: deb
+URIs: https://packages.mozilla.org/apt
+Suites: mozilla
+Components: main
+Signed-By: /etc/apt/keyrings/packages.mozilla.org.asc
+EOF
+      echo "Repositorio de Mozilla escrito en $MOZILLA_SOURCES (formato deb822)."
+    fi
+
+    # 5. Prioridad para que los paquetes de Mozilla no se vean
+    # eclipsados por otro repo que también publique "firefox".
+    sudo tee /etc/apt/preferences.d/mozilla >/dev/null <<'EOF'
+Package: *
+Pin: origin packages.mozilla.org
+Pin-Priority: 1000
+EOF
+
+    # 6. Instalación
+    sudo apt update
+    sudo apt install -y firefox
+
+    if confirm "¿Instalar también el paquete de idioma español (firefox-l10n-es)?"; then
+      sudo apt install -y firefox-l10n-es
+    fi
+
+    echo "Firefox de Mozilla instalado. Comprueba la versión con: firefox --version"
+  fi
+else
+  echo "Se omite la sustitución de Firefox."
+fi
+
+# ----------------------------------------------------------------------
 # 6. Notas finales
 # ----------------------------------------------------------------------
 
@@ -353,6 +467,16 @@ Notas:
       sudo apt remove zram-tools
     La configuración previa (si existía) quedó respaldada junto a
     /etc/default/zramswap con un sufijo .bak.<fecha>.
+
+  - Si instalaste Firefox desde el repositorio de Mozilla, comprueba
+    la versión con: firefox --version (debería ser una versión release,
+    no "esr" en el nombre). Para revertir a Firefox ESR de Debian:
+      sudo apt remove firefox
+      sudo rm /etc/apt/sources.list.d/mozilla.sources \
+              /etc/apt/sources.list.d/mozilla.list \
+              /etc/apt/preferences.d/mozilla 2>/dev/null
+      sudo apt update
+      sudo apt install firefox-esr
 
   - Si usaste -y, revisa que no se haya omitido ningún aviso importante
     de debconf (se silencian en modo no interactivo).
