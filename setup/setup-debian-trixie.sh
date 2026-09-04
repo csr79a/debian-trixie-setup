@@ -106,7 +106,34 @@ fi
 # 2. Repositorios (formato deb822)
 # ----------------------------------------------------------------------
 
+LEGACY_SOURCES="/etc/apt/sources.list"
 SOURCES_FILE="/etc/apt/sources.list.d/debian.sources"
+
+# El instalador de Debian (sobre todo desde la ISO oficial con DVD) suele
+# dejar un /etc/apt/sources.list "clásico" ya poblado (incluida a veces una
+# entrada de CD-ROM). Si lo dejamos tal cual y además escribimos nuestro
+# propio debian.sources (deb822) con las mismas suites/componentes, apt
+# acaba con los repos definidos por duplicado y falla al intentar
+# actualizar el CD-ROM. Para evitarlo, si ese archivo tiene líneas activas
+# (no comentarios ni vacías), se hace una copia de seguridad y se comentan
+# todas, dejando que sea únicamente debian.sources quien defina los repos.
+if [[ -f "$LEGACY_SOURCES" ]] && grep -qE '^\s*deb(-src)?\s' "$LEGACY_SOURCES"; then
+  echo "Se ha detectado contenido activo en $LEGACY_SOURCES (típico de una" \
+       "instalación desde la ISO oficial, a veces con una entrada de CD-ROM)."
+  echo "Para evitar repositorios duplicados, se comentará su contenido," \
+       "dejando que $SOURCES_FILE (creado a continuación) sea la única" \
+       "fuente de los repos oficiales de Debian."
+  if confirm "¿Continuar? (se guarda una copia de seguridad antes de tocar nada)"; then
+    LEGACY_BACKUP="${LEGACY_SOURCES}.bak.$(date +%Y%m%d%H%M%S)"
+    sudo cp "$LEGACY_SOURCES" "$LEGACY_BACKUP"
+    echo "Copia de seguridad: $LEGACY_BACKUP"
+    sudo sed -i -E '/^\s*deb(-src)?\s/ s/^/# desactivado por setup-debian-trixie.sh -- /' "$LEGACY_SOURCES"
+    echo "Contenido de $LEGACY_SOURCES comentado."
+  else
+    echo "Se omite la limpieza de $LEGACY_SOURCES. Es probable que 'apt update'" \
+         "muestre avisos de repos duplicados o falle en la entrada de CD-ROM."
+  fi
+fi
 
 if [[ -f "$SOURCES_FILE" ]]; then
   echo "Ya existe $SOURCES_FILE, no se sobrescribe. Revísalo manualmente si hace falta."
@@ -480,4 +507,9 @@ Notas:
 
   - Si usaste -y, revisa que no se haya omitido ningún aviso importante
     de debconf (se silencian en modo no interactivo).
+
+  - Si el script detectó y comentó contenido en /etc/apt/sources.list
+    (típico de una instalación desde la ISO oficial), tienes la copia
+    original en /etc/apt/sources.list.bak.<fecha> por si quieres
+    revisarla o revertir el cambio.
 EOF
