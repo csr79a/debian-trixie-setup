@@ -213,6 +213,14 @@ PACKAGES=(
   # que puedes identificar con: lspci -k
   firmware-linux
 
+  # Gestión de paquetes (interfaz gráfica)
+  # Synaptic: gestor de paquetes gráfico completo (buscar, instalar,
+  # quitar, marcar como "mantener versión", ver dependencias, etc.).
+  # GDebi: instala archivos .deb sueltos (descargados manualmente) con
+  # todas sus dependencias, algo que el doble clic no hace por defecto.
+  synaptic
+  gdebi
+
   # Flatpak + integración con Discover (KDE Plasma)
   flatpak
   plasma-discover-backend-flatpak
@@ -243,6 +251,80 @@ else
 fi
 
 # ----------------------------------------------------------------------
+# 5b. ZRAM (swap comprimido en RAM, 8 GB fijos)
+# ----------------------------------------------------------------------
+#
+# zram crea un dispositivo de swap comprimido que vive en RAM en vez de
+# en disco: es mucho más rápido que el swap tradicional y ayuda a evitar
+# que el sistema se quede sin memoria en cargas puntuales. Aquí se fija
+# un tamaño ABSOLUTO de 8 GiB (en vez de un porcentaje de la RAM total),
+# tal y como se pidió. Es un paso independiente y opcional: se pregunta
+# aparte porque toca la configuración de swap del sistema.
+
+ZRAM_SIZE_MB=8192  # 8 GiB, en MiB (unidad que usa zram-tools)
+
+echo
+if confirm "¿Configurar un dispositivo zram de 8 GB de swap comprimido en RAM?"; then
+  if ! dpkg -s zram-tools >/dev/null 2>&1; then
+    echo "Instalando zram-tools..."
+    sudo apt install -y zram-tools
+  else
+    echo "zram-tools ya está instalado."
+  fi
+
+  ZRAM_CONF="/etc/default/zramswap"
+
+  if [[ -f "$ZRAM_CONF" ]]; then
+    # Copia de seguridad de la config previa, por si acaso.
+    ZRAM_BACKUP="${ZRAM_CONF}.bak.$(date +%Y%m%d%H%M%S)"
+    sudo cp "$ZRAM_CONF" "$ZRAM_BACKUP"
+    echo "Copia de seguridad de la configuración previa: $ZRAM_BACKUP"
+
+    # Distintas versiones de zram-tools llaman a la variable de tamaño
+    # fijo "SIZE" o "ALLOCATION" (ambas en MiB). Se detecta cuál usa la
+    # versión instalada en vez de asumir un nombre concreto.
+    if grep -q '^#\?SIZE=' "$ZRAM_CONF"; then
+      SIZE_VAR="SIZE"
+    elif grep -q '^#\?ALLOCATION=' "$ZRAM_CONF"; then
+      SIZE_VAR="ALLOCATION"
+    else
+      SIZE_VAR=""
+    fi
+
+    if [[ -n "$SIZE_VAR" ]]; then
+      # Comenta cualquier variable de porcentaje (PERCENT/PERCENTAGE):
+      # si queda activa, tiene prioridad sobre el tamaño fijo y lo ignora.
+      sudo sed -i -E 's/^#?(PERCENT|PERCENTAGE)=.*/#&/' "$ZRAM_CONF"
+
+      # Descomenta/fija la variable de tamaño detectada a 8 GiB.
+      if grep -q "^${SIZE_VAR}=" "$ZRAM_CONF"; then
+        sudo sed -i "s/^${SIZE_VAR}=.*/${SIZE_VAR}=${ZRAM_SIZE_MB}/" "$ZRAM_CONF"
+      else
+        sudo sed -i "s/^#${SIZE_VAR}=.*/${SIZE_VAR}=${ZRAM_SIZE_MB}/" "$ZRAM_CONF"
+      fi
+
+      echo "Configurado ${SIZE_VAR}=${ZRAM_SIZE_MB} (8 GiB) en $ZRAM_CONF"
+      sudo systemctl restart zramswap.service 2>/dev/null || sudo service zramswap restart
+
+      echo "Estado actual del zram:"
+      zramctl 2>/dev/null || true
+      swapon --show 2>/dev/null || true
+    else
+      echo "Aviso: no se reconoció el formato de $ZRAM_CONF (puede que" \
+           "zram-tools use una versión con variables distintas a las" \
+           "esperadas). No se modificó el tamaño automáticamente para" \
+           "evitar dejar una configuración inconsistente; revísalo a mano:" \
+           "https://wiki.debian.org/ZRam"
+    fi
+  else
+    echo "Aviso: no se encontró $ZRAM_CONF tras instalar zram-tools." \
+         "Revisa manualmente: https://wiki.debian.org/ZRam"
+  fi
+else
+  echo "Se omite la configuración de zram."
+fi
+
+# ----------------------------------------------------------------------
 # 6. Notas finales
 # ----------------------------------------------------------------------
 
@@ -258,6 +340,19 @@ Notas:
 
   - Puede que haga falta reiniciar sesión (o el sistema) para que
     algunos cambios de firmware/microcode surtan efecto.
+
+  - Synaptic y GDebi ya están instalados: Synaptic desde el menú de
+    aplicaciones (o "synaptic-pkexec" por terminal); GDebi se puede
+    invocar sobre un .deb suelto con: gdebi archivo.deb
+
+  - Si configuraste zram, comprueba su estado cuando quieras con:
+      zramswap status
+      swapon --show
+    Para desactivarlo más adelante:
+      sudo systemctl disable --now zramswap
+      sudo apt remove zram-tools
+    La configuración previa (si existía) quedó respaldada junto a
+    /etc/default/zramswap con un sufijo .bak.<fecha>.
 
   - Si usaste -y, revisa que no se haya omitido ningún aviso importante
     de debconf (se silencian en modo no interactivo).

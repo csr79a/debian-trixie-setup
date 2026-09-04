@@ -2,8 +2,10 @@
 
 Script de configuración inicial para **Debian 13 (trixie)** con KDE Plasma.
 Automatiza la configuración de repositorios, la actualización del sistema,
-la instalación de un set de paquetes de desarrollo/multimedia/sistema, el
-microcode correcto según el fabricante de CPU, y añade el remoto de Flathub.
+la instalación de un set de paquetes de desarrollo/multimedia/sistema
+(incluyendo Synaptic y GDebi como gestores de paquetes gráficos), el
+microcode correcto según el fabricante de CPU, un dispositivo zram de 8 GB
+de swap comprimido en RAM (opcional), y añade el remoto de Flathub.
 
 ---
 
@@ -14,6 +16,7 @@ microcode correcto según el fabricante de CPU, y añade el remoto de Flathub.
 - [Requisitos](#requisitos)
 - [Uso](#uso)
 - [Qué se instala](#qué-se-instala)
+- [ZRAM: swap comprimido en RAM (8 GB)](#zram-swap-comprimido-en-ram-8-gb)
 - [Detalles importantes](#detalles-importantes)
 - [Después de ejecutarlo](#después-de-ejecutarlo)
 - [Solución de problemas](#solución-de-problemas)
@@ -34,9 +37,12 @@ El script ejecuta, en orden, los siguientes pasos:
 4. Ejecuta `apt update` y, opcionalmente, `apt full-upgrade`.
 5. Detecta el fabricante de la CPU (`Intel`/`AMD`) para instalar el paquete
    de microcode correspondiente.
-6. Instala un conjunto de paquetes (ver [tabla completa](#qué-se-instala)).
+6. Instala un conjunto de paquetes, incluyendo Synaptic y GDebi (ver
+   [tabla completa](#qué-se-instala)).
 7. Añade el remoto de **Flathub** si no está ya configurado.
-8. Muestra notas finales (p. ej. sobre `fd-find`).
+8. Pregunta si quieres configurar un dispositivo **zram** de 8 GB de swap
+   comprimido en RAM (ver [sección dedicada](#zram-swap-comprimido-en-ram-8-gb)).
+9. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic/GDebi y zram).
 
 ---
 
@@ -155,8 +161,61 @@ ahí, verás un mensaje claro señalando este README en vez de un error de
 | Desarrollo / compilación | `build-essential`, `gcc`, `g++`, `make`, `cmake`, `ninja-build`, `pkg-config`, `autoconf`, `automake`, `libtool`, `openssh-client` |
 | Multimedia | `ffmpeg`, `gstreamer1.0-libav`, `gstreamer1.0-plugins-good/bad/ugly`, `pavucontrol` |
 | Firmware | `firmware-linux` (metapaquete, ver nota abajo) |
+| Gestión de paquetes (GUI) | `synaptic`, `gdebi` |
 | Flatpak / KDE | `flatpak`, `plasma-discover-backend-flatpak` |
 | Microcode | `intel-microcode` o `amd64-microcode`, según CPU detectada |
+| ZRAM (opcional, con confirmación aparte) | `zram-tools`, configurado a 8 GiB fijos |
+
+---
+
+## ZRAM: swap comprimido en RAM (8 GB)
+
+### Qué es y para qué sirve
+
+zram crea un dispositivo de intercambio (swap) que vive **comprimido en
+RAM** en vez de en disco. Es mucho más rápido que el swap tradicional en
+HDD/SSD y ayuda a que el sistema no se quede corto de memoria en picos de
+uso, sin el desgaste de escritura de un swapfile en disco.
+
+### Qué hace el script exactamente
+
+Es un paso **independiente** de la instalación de paquetes, con su propia
+confirmación (respeta `-y` igual que el resto):
+
+1. Instala `zram-tools` si no está ya instalado.
+2. Hace una copia de seguridad de `/etc/default/zramswap` antes de tocarlo
+   (con sufijo `.bak.<fecha>`).
+3. Detecta si tu versión de `zram-tools` usa la variable `SIZE` o
+   `ALLOCATION` para fijar un tamaño absoluto (varía según versión), y
+   fija esa variable a **8192** (8 GiB en MiB, la unidad que usa
+   zram-tools).
+4. Comenta cualquier variable de porcentaje (`PERCENT`/`PERCENTAGE`) que
+   estuviera activa, porque si queda activa tiene prioridad sobre el
+   tamaño fijo y lo ignoraría silenciosamente.
+5. Reinicia el servicio `zramswap` y muestra el estado resultante
+   (`zramctl` / `swapon --show`).
+
+Si el script no reconoce el formato del archivo de configuración (por
+ejemplo, una versión de `zram-tools` con variables distintas a las
+esperadas), **no modifica nada automáticamente** — para no dejar una
+configuración inconsistente — y te avisa para que lo revises a mano
+siguiendo [wiki.debian.org/ZRam](https://wiki.debian.org/ZRam).
+
+### Comprobar y revertir
+
+```bash
+# Ver el estado actual
+zramswap status
+swapon --show
+
+# Desactivarlo si ya no lo quieres
+sudo systemctl disable --now zramswap
+sudo apt remove zram-tools
+
+# Recuperar la configuración previa (si la había) desde el backup
+sudo cp /etc/default/zramswap.bak.<fecha> /etc/default/zramswap
+sudo systemctl restart zramswap
+```
 
 ---
 
@@ -190,6 +249,20 @@ ln -s "$(command -v fdfind)" ~/.local/bin/fd
 ```
 
 Asegúrate de que `~/.local/bin` esté en tu `$PATH`.
+
+### Synaptic y GDebi
+
+- **Synaptic**: gestor de paquetes gráfico completo — buscar, instalar,
+  quitar, fijar versiones, ver dependencias. Se abre desde el menú de
+  aplicaciones o con `synaptic-pkexec` en terminal (te pide la
+  autenticación con `polkit`, no hace falta anteponer `sudo`).
+- **GDebi**: instala archivos `.deb` sueltos (por ejemplo, descargados de
+  la web) resolviendo automáticamente sus dependencias, algo que abrir el
+  archivo con doble clic no siempre hace bien. Uso:
+  ```bash
+  sudo gdebi ruta/al/archivo.deb
+  ```
+  o desde su interfaz gráfica, abriendo el `.deb` con GDebi.
 
 ### `apt full-upgrade`
 
