@@ -402,12 +402,25 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
     | sudo tee /etc/apt/keyrings/packages.mozilla.org.asc >/dev/null
 
   # 3. Verificación de la huella digital (paso de seguridad, no opcional)
+  #
+  # Se usa un GNUPGHOME temporal y aislado en vez del ~/.gnupg del usuario:
+  # así no depende de que ya exista (en un usuario que nunca ha usado gpg,
+  # gpg no lo crea solo y falla con "no existe el fichero o el directorio"),
+  # y de paso no se toca el keyring personal del usuario solo para
+  # comprobar una huella digital. Se limpia el directorio al terminar,
+  # pase lo que pase (trap).
+  MOZILLA_GPG_TMPHOME="$(mktemp -d)"
+  trap 'rm -rf "$MOZILLA_GPG_TMPHOME"' RETURN
+
   MOZILLA_EXPECTED_FPR="35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3"
   MOZILLA_ACTUAL_FPR="$(
-    gpg -n -q --import --import-options import-show \
+    GNUPGHOME="$MOZILLA_GPG_TMPHOME" gpg -n -q --import --import-options import-show \
       /etc/apt/keyrings/packages.mozilla.org.asc \
       | awk '/pub/{getline; gsub(/^ +| +$/,""); print; exit}'
   )"
+
+  rm -rf "$MOZILLA_GPG_TMPHOME"
+  trap - RETURN
 
   if [[ "$MOZILLA_ACTUAL_FPR" == "$MOZILLA_EXPECTED_FPR" ]]; then
     echo "Huella digital de la clave de Mozilla verificada correctamente."
