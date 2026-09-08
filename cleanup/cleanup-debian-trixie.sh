@@ -191,6 +191,15 @@ XTERM_GROUP=(
   xterm
 )
 
+# GRUPO 3c — KDE Connect
+# Integra el móvil con el escritorio (notificaciones, compartir
+# archivos, control remoto...). Independiente de todo lo anterior: no
+# comparte árbol de dependencias con PIM, accesibilidad, Konqueror ni
+# xterm, así que va en su propio grupo.
+KDECONNECT_GROUP=(
+  kdeconnect
+)
+
 # GRUPO 4 (opcional, --imagemagick) — ImageMagick
 # ¡OJO! No es una app de Plasma: es una utilidad/librería que usan otros
 # programas por debajo (miniaturas, importación/exportación de imágenes
@@ -214,6 +223,7 @@ remove_group "Suite PIM / Kontact (KMail, KAddressBook, KTnef, editores de tema,
 remove_group "Accesibilidad (KMouseTool, KMouth, Kontrast)" "${ACCESSIBILITY_GROUP[@]}"
 remove_group "Konqueror" "${KONQUEROR_GROUP[@]}"
 remove_group "xterm" "${XTERM_GROUP[@]}"
+remove_group "KDE Connect" "${KDECONNECT_GROUP[@]}"
 
 if [[ "$INCLUDE_IMAGEMAGICK" -eq 1 ]]; then
   echo
@@ -240,6 +250,11 @@ fi
 echo
 if confirm "¿Ejecutar 'apt autoremove' para limpiar dependencias huérfanas?"; then
   sudo apt autoremove
+fi
+
+echo
+if confirm "¿Ejecutar 'apt autoclean' para limpiar el caché de paquetes .deb descargados que ya no están disponibles?"; then
+  sudo apt autoclean
 fi
 
 cat <<'EOF'

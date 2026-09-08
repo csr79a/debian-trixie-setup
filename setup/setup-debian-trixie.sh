@@ -278,28 +278,40 @@ else
 fi
 
 # ----------------------------------------------------------------------
-# 5b. ZRAM (swap comprimido en RAM, 8 GB fijos)
+# 5b. ZRAM (swap comprimido en RAM, tamaño automático según RAM total)
 # ----------------------------------------------------------------------
 #
 # zram crea un dispositivo de swap comprimido que vive en RAM en vez de
 # en disco: es mucho más rápido que el swap tradicional y ayuda a evitar
-# que el sistema se quede sin memoria en cargas puntuales. Aquí se fija
-# un tamaño ABSOLUTO de 8 GiB (en vez de un porcentaje de la RAM total),
-# tal y como se pidió. Es un paso independiente y opcional: se pregunta
-# aparte porque toca la configuración de swap del sistema.
+# que el sistema se quede sin memoria en cargas puntuales. El tamaño se
+# calcula automáticamente como la mitad de la RAM total del sistema
+# (regla práctica habitual): 8 GB de RAM -> 4 GB de zram, 16 GB -> 8 GB,
+# 32 GB -> 16 GB, etc. Se detecta en tiempo de ejecución a partir de
+# /proc/meminfo, así que el script se adapta a la máquina donde se
+# ejecute sin necesidad de tocar nada a mano. Es un paso independiente y
+# opcional: se pregunta aparte porque toca la configuración de swap del
+# sistema.
 
-ZRAM_SIZE_MB=8192  # 8 GiB, en MiB (unidad que usa zram-tools)
+TOTAL_RAM_KB="$(grep -m1 '^MemTotal:' /proc/meminfo | awk '{print $2}')"
+TOTAL_RAM_MB=$(( TOTAL_RAM_KB / 1024 ))
+ZRAM_SIZE_MB=$(( TOTAL_RAM_MB / 2 ))
 
 echo
-if confirm "¿Configurar un dispositivo zram de 8 GB de swap comprimido en RAM?"; then
-  if ! dpkg -s zram-tools >/dev/null 2>&1; then
-    echo "Instalando zram-tools..."
-    sudo apt install -y zram-tools
-  else
-    echo "zram-tools ya está instalado."
-  fi
+# Salvaguarda: si por lo que sea no se pudo leer /proc/meminfo o el
+# cálculo da 0, no se propone zram en vez de configurar un tamaño inválido.
+if [[ -z "$TOTAL_RAM_KB" || "$ZRAM_SIZE_MB" -le 0 ]]; then
+  echo "Aviso: no se ha podido determinar la RAM total del sistema; se omite la configuración de zram."
+else
+  echo "RAM total detectada: ${TOTAL_RAM_MB} MiB -> zram propuesto: ${ZRAM_SIZE_MB} MiB (mitad de la RAM)"
+  if confirm "¿Configurar zram (swap comprimido en RAM) con ${ZRAM_SIZE_MB} MiB?"; then
+    if ! dpkg -s zram-tools >/dev/null 2>&1; then
+      echo "Instalando zram-tools..."
+      sudo apt install -y zram-tools
+    else
+      echo "zram-tools ya está instalado."
+    fi
 
-  ZRAM_CONF="/etc/default/zramswap"
+    ZRAM_CONF="/etc/default/zramswap"
 
   if [[ -f "$ZRAM_CONF" ]]; then
     # Copia de seguridad de la config previa, por si acaso.
@@ -323,19 +335,38 @@ if confirm "¿Configurar un dispositivo zram de 8 GB de swap comprimido en RAM?"
       # si queda activa, tiene prioridad sobre el tamaño fijo y lo ignora.
       sudo sed -i -E 's/^#?(PERCENT|PERCENTAGE)=.*/#&/' "$ZRAM_CONF"
 
-      # Descomenta/fija la variable de tamaño detectada a 8 GiB.
+      # Descomenta/fija la variable de tamaño detectada al valor calculado.
       if grep -q "^${SIZE_VAR}=" "$ZRAM_CONF"; then
         sudo sed -i "s/^${SIZE_VAR}=.*/${SIZE_VAR}=${ZRAM_SIZE_MB}/" "$ZRAM_CONF"
       else
         sudo sed -i "s/^#${SIZE_VAR}=.*/${SIZE_VAR}=${ZRAM_SIZE_MB}/" "$ZRAM_CONF"
       fi
 
-      echo "Configurado ${SIZE_VAR}=${ZRAM_SIZE_MB} (8 GiB) en $ZRAM_CONF"
+      echo "Configurado ${SIZE_VAR}=${ZRAM_SIZE_MB} (${ZRAM_SIZE_MB} MiB) en $ZRAM_CONF"
       sudo systemctl restart zramswap.service 2>/dev/null || sudo service zramswap restart
 
       echo "Estado actual del zram:"
       zramctl 2>/dev/null || true
       swapon --show 2>/dev/null || true
+
+      # vm.swappiness=60 (valor por defecto) está pensado para swap en
+      # disco: el kernel espera a que la RAM esté casi llena antes de
+      # usarlo, porque mover datos a disco es lento. Con zram, el swap
+      # vive comprimido en RAM (mucho más rápido que un disco), así que
+      # conviene un swappiness más alto (rango habitual recomendado con
+      # zram: 130-180) para que el kernel mande antes las páginas frías
+      # al zram y deje más RAM libre real para caché y procesos activos.
+      SWAPPINESS_VALUE=130
+      SWAPPINESS_CONF="/etc/sysctl.d/99-zram-swappiness.conf"
+
+      if confirm "¿Ajustar vm.swappiness a ${SWAPPINESS_VALUE} (recomendado con zram, por defecto es 60 y está pensado para swap en disco)?"; then
+        echo "vm.swappiness=${SWAPPINESS_VALUE}" | sudo tee "$SWAPPINESS_CONF" >/dev/null
+        sudo sysctl -p "$SWAPPINESS_CONF" >/dev/null
+        echo "Configurado vm.swappiness=${SWAPPINESS_VALUE} de forma persistente en $SWAPPINESS_CONF"
+        echo "Valor activo confirmado: $(sudo sysctl -n vm.swappiness)"
+      else
+        echo "Se omite el ajuste de vm.swappiness (se queda en el valor actual del sistema)."
+      fi
     else
       echo "Aviso: no se reconoció el formato de $ZRAM_CONF (puede que" \
            "zram-tools use una versión con variables distintas a las" \
@@ -349,6 +380,7 @@ if confirm "¿Configurar un dispositivo zram de 8 GB de swap comprimido en RAM?"
   fi
 else
   echo "Se omite la configuración de zram."
+fi
 fi
 
 # ----------------------------------------------------------------------
@@ -507,6 +539,8 @@ Notas:
       sudo apt remove zram-tools
     La configuración previa (si existía) quedó respaldada junto a
     /etc/default/zramswap con un sufijo .bak.<fecha>.
+    Si además ajustaste vm.swappiness, comprueba el valor activo con:
+      sudo sysctl vm.swappiness
 
   - Si instalaste Firefox desde el repositorio de Mozilla, comprueba
     la versión con: firefox --version (debería ser una versión release,

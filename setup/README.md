@@ -4,8 +4,9 @@ Script de configuración inicial para **Debian 13 (trixie)** con KDE Plasma.
 Automatiza la configuración de repositorios, la actualización del sistema,
 la instalación de un set de paquetes de desarrollo/multimedia/sistema
 (incluyendo Synaptic y GDebi como gestores de paquetes gráficos), el
-microcode correcto según el fabricante de CPU, un dispositivo zram de 8 GB
-de swap comprimido en RAM (opcional), la sustitución de Firefox ESR por el
+microcode correcto según el fabricante de CPU, un dispositivo zram de swap
+comprimido en RAM con tamaño calculado automáticamente según la RAM total
+(opcional), la sustitución de Firefox ESR por el
 Firefox oficial de Mozilla (opcional), y añade el remoto de Flathub.
 
 ---
@@ -13,11 +14,12 @@ Firefox oficial de Mozilla (opcional), y añade el remoto de Flathub.
 ## Índice
 
 - [Qué hace](#qué-hace)
+- [sources.list clásico preexistente](#sourceslist-clásico-preexistente)
 - [Requisitos previos: dejar sudo listo](#requisitos-previos-dejar-sudo-listo)
 - [Requisitos](#requisitos)
 - [Uso](#uso)
 - [Qué se instala](#qué-se-instala)
-- [ZRAM: swap comprimido en RAM (8 GB)](#zram-swap-comprimido-en-ram-8-gb)
+- [ZRAM: swap comprimido en RAM (tamaño automático)](#zram-swap-comprimido-en-ram-tamaño-automático)
 - [Firefox oficial de Mozilla](#firefox-oficial-de-mozilla)
 - [Detalles importantes](#detalles-importantes)
 - [Después de ejecutarlo](#después-de-ejecutarlo)
@@ -33,20 +35,54 @@ El script ejecuta, en orden, los siguientes pasos:
 
 1. Comprueba que no se ejecuta como `root` y que el sistema usa `apt`.
 2. Avisa si el codename detectado no es `trixie` (permite continuar bajo confirmación).
-3. Escribe `/etc/apt/sources.list.d/debian.sources` en formato **deb822**
+3. Si `/etc/apt/sources.list` tiene contenido activo (típico de una
+   instalación desde la ISO oficial, a veces con entrada de CD-ROM), hace
+   una copia de seguridad y lo comenta, para que no compita con el nuevo
+   `debian.sources` (ver [sección dedicada](#sourceslist-clásico-preexistente)).
+4. Escribe `/etc/apt/sources.list.d/debian.sources` en formato **deb822**
    (repos `main`, `contrib`, `non-free`, `non-free-firmware` para trixie,
    trixie-security y trixie-backports). **No sobrescribe** el archivo si ya existe.
-4. Ejecuta `apt update` y, opcionalmente, `apt full-upgrade`.
-5. Detecta el fabricante de la CPU (`Intel`/`AMD`) para instalar el paquete
+5. Ejecuta `apt update` y, opcionalmente, `apt full-upgrade`.
+6. Detecta el fabricante de la CPU (`Intel`/`AMD`) para instalar el paquete
    de microcode correspondiente.
-6. Instala un conjunto de paquetes, incluyendo Synaptic y GDebi (ver
+7. Instala un conjunto de paquetes, incluyendo Synaptic y GDebi (ver
    [tabla completa](#qué-se-instala)).
-7. Añade el remoto de **Flathub** si no está ya configurado.
-8. Pregunta si quieres configurar un dispositivo **zram** de 8 GB de swap
-   comprimido en RAM (ver [sección dedicada](#zram-swap-comprimido-en-ram-8-gb)).
-9. Pregunta si quieres sustituir Firefox ESR por el **Firefox oficial de
-   Mozilla** (ver [sección dedicada](#firefox-oficial-de-mozilla)).
-10. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic/GDebi, zram y Firefox).
+8. Añade el remoto de **Flathub** si no está ya configurado.
+9. Pregunta si quieres configurar un dispositivo **zram** (swap comprimido
+   en RAM, tamaño calculado automáticamente según la RAM total), y de ser
+   así, si quieres ajustar también `vm.swappiness` a un valor recomendado
+   para zram (ver [sección dedicada](#zram-swap-comprimido-en-ram-tamaño-automático)).
+10. Pregunta si quieres sustituir Firefox ESR por el **Firefox oficial de
+    Mozilla** (ver [sección dedicada](#firefox-oficial-de-mozilla)).
+11. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic/GDebi, zram, Firefox
+    y el sources.list clásico neutralizado).
+
+---
+
+## sources.list clásico preexistente
+
+Si instalaste Debian desde la ISO oficial (sobre todo el DVD), es muy
+probable que `/etc/apt/sources.list` ya tenga contenido activo, a veces
+incluyendo una entrada `cdrom://`. Si el script escribiera su propio
+`debian.sources` (deb822) sin tocar ese archivo, `apt` acabaría con las
+mismas suites y componentes definidos dos veces (avisos de "está
+configurado varias veces") y fallaría al intentar actualizar la entrada
+de CD-ROM.
+
+Para evitarlo, antes de crear `debian.sources` el script:
+
+1. Comprueba si `/etc/apt/sources.list` tiene líneas `deb`/`deb-src`
+   activas (no comentarios ni vacías).
+2. Si las tiene, pide confirmación (respeta `-y`) y, si aceptas, hace una
+   copia de seguridad (`sources.list.bak.<fecha>`) y comenta esas líneas.
+3. A partir de ahí, `debian.sources` es la única fuente de los repos
+   oficiales de Debian.
+
+Si prefieres revisarlo tú mismo antes de nada, revierte con:
+
+```bash
+sudo cp /etc/apt/sources.list.bak.<fecha> /etc/apt/sources.list
+```
 
 ---
 
@@ -168,11 +204,11 @@ ahí, verás un mensaje claro señalando este README en vez de un error de
 | Gestión de paquetes (GUI) | `synaptic`, `gdebi` |
 | Flatpak / KDE | `flatpak`, `plasma-discover-backend-flatpak` |
 | Microcode | `intel-microcode` o `amd64-microcode`, según CPU detectada |
-| ZRAM (opcional, con confirmación aparte) | `zram-tools`, configurado a 8 GiB fijos |
+| ZRAM (opcional, con confirmación aparte) | `zram-tools`, tamaño calculado automáticamente (mitad de la RAM total) |
 
 ---
 
-## ZRAM: swap comprimido en RAM (8 GB)
+## ZRAM: swap comprimido en RAM (tamaño automático)
 
 ### Qué es y para qué sirve
 
@@ -186,24 +222,48 @@ uso, sin el desgaste de escritura de un swapfile en disco.
 Es un paso **independiente** de la instalación de paquetes, con su propia
 confirmación (respeta `-y` igual que el resto):
 
-1. Instala `zram-tools` si no está ya instalado.
-2. Hace una copia de seguridad de `/etc/default/zramswap` antes de tocarlo
+1. Calcula el tamaño de zram automáticamente como **la mitad de la RAM
+   total del sistema**, leída de `/proc/meminfo` en tiempo de ejecución
+   (regla práctica habitual): 8 GB de RAM → 4 GB de zram, 16 GB → 8 GB,
+   32 GB → 16 GB, etc. Si por lo que sea no se puede determinar la RAM
+   total, se omite la configuración de zram en vez de arriesgarse a un
+   tamaño inválido.
+2. Instala `zram-tools` si no está ya instalado.
+3. Hace una copia de seguridad de `/etc/default/zramswap` antes de tocarlo
    (con sufijo `.bak.<fecha>`).
-3. Detecta si tu versión de `zram-tools` usa la variable `SIZE` o
+4. Detecta si tu versión de `zram-tools` usa la variable `SIZE` o
    `ALLOCATION` para fijar un tamaño absoluto (varía según versión), y
-   fija esa variable a **8192** (8 GiB en MiB, la unidad que usa
-   zram-tools).
-4. Comenta cualquier variable de porcentaje (`PERCENT`/`PERCENTAGE`) que
+   fija esa variable al tamaño calculado en el paso 1 (en MiB, la unidad
+   que usa zram-tools).
+5. Comenta cualquier variable de porcentaje (`PERCENT`/`PERCENTAGE`) que
    estuviera activa, porque si queda activa tiene prioridad sobre el
    tamaño fijo y lo ignoraría silenciosamente.
-5. Reinicia el servicio `zramswap` y muestra el estado resultante
+6. Reinicia el servicio `zramswap` y muestra el estado resultante
    (`zramctl` / `swapon --show`).
+7. Con zram ya configurado, pregunta (confirmación aparte) si quieres
+   ajustar `vm.swappiness` a **130**, valor recomendado para sistemas con
+   zram (rango habitual 130-180) — el valor por defecto de Debian (60)
+   está pensado para swap en disco, no en RAM comprimida. Se fija de
+   forma persistente en `/etc/sysctl.d/99-zram-swappiness.conf`.
 
 Si el script no reconoce el formato del archivo de configuración (por
 ejemplo, una versión de `zram-tools` con variables distintas a las
 esperadas), **no modifica nada automáticamente** — para no dejar una
 configuración inconsistente — y te avisa para que lo revises a mano
 siguiendo [wiki.debian.org/ZRam](https://wiki.debian.org/ZRam).
+
+### Por qué subir vm.swappiness con zram
+
+`vm.swappiness` controla, en una escala de 0 a 200, qué tan agresivo es
+el kernel para mover páginas de memoria "frías" a swap. El valor por
+defecto (60) asume que el swap vive en disco, donde conviene ser
+conservador porque mover datos ahí es lento. Con zram, el "swap" vive
+comprimido en la propia RAM — mucho más rápido que un disco — así que
+tiene sentido subir el valor para que el kernel mande antes las páginas
+frías al zram, dejando más RAM libre real para caché y procesos activos.
+El rango 130-180 no es un número oficial de Debian, pero es el que
+suelen recomendar tanto la documentación de `zram-tools` como distros
+que activan zram por defecto (p. ej. Fedora).
 
 ### Comprobar y revertir
 
@@ -219,6 +279,13 @@ sudo apt remove zram-tools
 # Recuperar la configuración previa (si la había) desde el backup
 sudo cp /etc/default/zramswap.bak.<fecha> /etc/default/zramswap
 sudo systemctl restart zramswap
+
+# Ver el vm.swappiness activo
+sudo sysctl vm.swappiness
+
+# Volver al valor por defecto de Debian (60)
+sudo rm /etc/sysctl.d/99-zram-swappiness.conf
+sudo sysctl -w vm.swappiness=60
 ```
 
 ---
@@ -364,6 +431,7 @@ recién instalado o con repos distintos, para partir de un estado consistente.
 | El script se detiene pidiendo input inesperado | Prompt de debconf (p. ej. licencia de firmware) | Usa `-y` para modo no interactivo, o responde manualmente |
 | `fd: command not found` tras instalar | Es normal, ver [sección `fd-find`](#fd-find) | Crea el symlink indicado |
 | Aviso de codename distinto de `trixie` | Estás en otra versión/derivada de Debian | Revisa compatibilidad antes de continuar |
+| Avisos "está configurado varias veces" en `apt update`, o error de `cdrom://` | `/etc/apt/sources.list` clásico seguía activo junto al nuevo `debian.sources` | Ejecuta el script de nuevo (o edita `/etc/apt/sources.list` a mano y comenta sus líneas `deb`) |
 
 ---
 
@@ -372,6 +440,8 @@ recién instalado o con repos distintos, para partir de un estado consistente.
 El script se puede volver a ejecutar sin problema:
 
 - No sobrescribe `debian.sources` si ya existe.
+- Si `/etc/apt/sources.list` ya fue comentado en una ejecución anterior,
+  no queda contenido activo que volver a comentar.
 - `apt install` sobre paquetes ya instalados no hace nada.
 - Flathub no se vuelve a añadir si ya está configurado.
 
