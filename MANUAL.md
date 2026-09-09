@@ -5,9 +5,9 @@ ejecutar los dos scripts de este proyecto:
 
 - **`setup-debian-trixie.sh`** — configura repos, actualiza el sistema e
   instala un set de paquetes de desarrollo/multimedia/sistema. Ver
-  `README-setup.md` para el detalle de qué instala.
+  `setup/README.md` para el detalle de qué instala.
 - **`cleanup-debian-trixie.sh`** — elimina aplicaciones de KDE Plasma que
-  no usas. Ver `README-cleanup.md` para el detalle de qué elimina.
+  no usas. Ver `cleanup/README.md` para el detalle de qué elimina.
 
 No hace falta que sepas bash para seguir estos pasos.
 
@@ -66,35 +66,39 @@ fallar a mitad de instalación.
 Los archivos que necesitas están en esta misma entrega:
 
 ```
-setup-debian-trixie.sh
-README-setup.md
-cleanup-debian-trixie.sh
-README-cleanup.md
+setup/setup-debian-trixie.sh
+setup/README.md
+cleanup/cleanup-debian-trixie.sh
+cleanup/README.md
 MANUAL.md   (este archivo)
 ```
 
 Cópialos a una carpeta de tu sistema, por ejemplo:
 
 ```bash
-mkdir -p ~/Proyectos/debian-trixie-setup
-cd ~/Proyectos/debian-trixie-setup
-# copia aquí los archivos (USB, git clone, scp, lo que uses)
+mkdir -p ~/Proyectos
+cd ~/Proyectos
+git clone https://github.com/csr79a/debian-trixie-setup.git
+cd debian-trixie-setup
 ```
+
+(o cópialos manualmente por USB/scp, respetando la misma estructura de
+carpetas: `setup/` y `cleanup/`.)
 
 Por defecto, los archivos que copies **no tienen permiso de ejecución** —
 es una medida de seguridad de Linux: un `.sh` no se ejecuta como programa
 solo por tener esa extensión. Hay que dárselo explícitamente:
 
 ```bash
-chmod +x setup-debian-trixie.sh
-chmod +x cleanup-debian-trixie.sh
+chmod +x setup/setup-debian-trixie.sh
+chmod +x cleanup/cleanup-debian-trixie.sh
 ```
 
 `chmod +x` añade el permiso "ejecutable" (execute) al archivo, para tu
 usuario, el grupo y otros. Puedes comprobar que se aplicó con:
 
 ```bash
-ls -l setup-debian-trixie.sh
+ls -l setup/setup-debian-trixie.sh
 # -rwxr-xr-x ...   ← las "x" indican que ya es ejecutable
 ```
 
@@ -102,15 +106,15 @@ ls -l setup-debian-trixie.sh
 
 ## 3. Ejecutar los scripts
 
-Siempre desde la carpeta donde están (o indicando la ruta), **nunca como
-root directamente**:
+Siempre desde la carpeta del repo (o indicando la ruta completa), **nunca
+como root directamente**:
 
 ```bash
 # Instalación inicial del sistema
-./setup-debian-trixie.sh
+./setup/setup-debian-trixie.sh
 
 # Limpieza de apps de KDE que no usas (ejecútalo después, cuando quieras)
-./cleanup-debian-trixie.sh
+./cleanup/cleanup-debian-trixie.sh
 ```
 
 El `./` al principio le dice a la terminal "ejecuta el archivo que está
@@ -129,8 +133,8 @@ Si ya revisaste el script y confías en él, puedes saltarte todas las
 confirmaciones con `-y`:
 
 ```bash
-./setup-debian-trixie.sh -y
-./cleanup-debian-trixie.sh -y
+./setup/setup-debian-trixie.sh -y
+./cleanup/cleanup-debian-trixie.sh -y
 ```
 
 **Recomendación:** la primera vez que uses cada script, hazlo sin `-y`,
@@ -145,8 +149,8 @@ Ambos scripts aceptan `-h`/`--help` para ver un resumen rápido de sus
 opciones sin ejecutar nada:
 
 ```bash
-./setup-debian-trixie.sh -h
-./cleanup-debian-trixie.sh -h
+./setup/setup-debian-trixie.sh -h
+./cleanup/cleanup-debian-trixie.sh -h
 ```
 
 ---
@@ -154,10 +158,10 @@ opciones sin ejecutar nada:
 ## 4. Orden recomendado
 
 1. Deja `sudo` listo (paso 1).
-2. Ejecuta `setup-debian-trixie.sh` en un sistema recién instalado, para
-   partir de repos y paquetes base consistentes.
+2. Ejecuta `setup/setup-debian-trixie.sh` en un sistema recién instalado,
+   para partir de repos y paquetes base consistentes.
 3. Cuando lleves un tiempo usando el sistema y tengas claro qué apps de
-   KDE no usas, ejecuta `cleanup-debian-trixie.sh`.
+   KDE no usas, ejecuta `cleanup/cleanup-debian-trixie.sh`.
 4. Prueba siempre primero en una máquina virtual si vas a cambiar algo
    del script o no estás seguro de qué se va a eliminar — es lo que ya
    vienes haciendo y es la forma correcta de validarlo sin riesgo.
