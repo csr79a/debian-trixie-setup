@@ -7,7 +7,8 @@ la instalación de un set de paquetes de desarrollo/multimedia/sistema
 microcode correcto según el fabricante de CPU, un dispositivo zram de swap
 comprimido en RAM con tamaño calculado automáticamente según la RAM total
 (opcional), la sustitución de Firefox ESR por el
-Firefox oficial de Mozilla (opcional), y añade el remoto de Flathub.
+Firefox oficial de Mozilla (opcional), el driver propietario de NVIDIA si
+se detecta una GPU compatible (opcional), y añade el remoto de Flathub.
 
 ---
 
@@ -21,6 +22,7 @@ Firefox oficial de Mozilla (opcional), y añade el remoto de Flathub.
 - [Qué se instala](#qué-se-instala)
 - [ZRAM: swap comprimido en RAM (tamaño automático)](#zram-swap-comprimido-en-ram-tamaño-automático)
 - [Firefox oficial de Mozilla](#firefox-oficial-de-mozilla)
+- [Driver NVIDIA](#driver-nvidia)
 - [Detalles importantes](#detalles-importantes)
 - [Después de ejecutarlo](#después-de-ejecutarlo)
 - [Solución de problemas](#solución-de-problemas)
@@ -54,8 +56,11 @@ El script ejecuta, en orden, los siguientes pasos:
    para zram (ver [sección dedicada](#zram-swap-comprimido-en-ram-tamaño-automático)).
 10. Pregunta si quieres sustituir Firefox ESR por el **Firefox oficial de
     Mozilla** (ver [sección dedicada](#firefox-oficial-de-mozilla)).
-11. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic/GDebi, zram, Firefox
-    y el sources.list clásico neutralizado).
+11. Si detecta una GPU **NVIDIA** por `lspci`, pregunta si quieres instalar
+    el driver propietario (`nvidia-open`), avisando antes de la limitación
+    de compatibilidad (ver [sección dedicada](#driver-nvidia)).
+12. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic/GDebi, zram, Firefox,
+    NVIDIA y el sources.list clásico neutralizado).
 
 ---
 
@@ -205,6 +210,7 @@ ahí, verás un mensaje claro señalando este README en vez de un error de
 | Flatpak / KDE | `flatpak`, `plasma-discover-backend-flatpak` |
 | Microcode | `intel-microcode` o `amd64-microcode`, según CPU detectada |
 | ZRAM (opcional, con confirmación aparte) | `zram-tools`, tamaño calculado automáticamente (mitad de la RAM total) |
+| NVIDIA (opcional, solo si se detecta GPU NVIDIA) | `nvidia-open`, `nvidia-kernel-open-dkms`, `nvidia-settings`, `dkms`, `linux-headers-amd64`, `firmware-misc-nonfree`, paquetes de Vulkan |
 
 ---
 
@@ -349,6 +355,74 @@ sudo rm /etc/apt/sources.list.d/mozilla.sources \
         /etc/apt/preferences.d/mozilla 2>/dev/null
 sudo apt update
 sudo apt install firefox-esr
+```
+
+---
+
+## Driver NVIDIA
+
+### Qué hace el script exactamente
+
+Paso **independiente y opcional**, solo se ofrece si `lspci` detecta una
+GPU NVIDIA:
+
+1. Muestra la GPU detectada y un aviso de compatibilidad (ver más abajo)
+   antes de pedir confirmación.
+2. Añade el repositorio oficial de NVIDIA vía el paquete `cuda-keyring`
+   (solo si no estaba ya instalado, para no repetirlo en ejecuciones
+   sucesivas).
+3. Instala `nvidia-open` **sin pinear versión**: en vez de fijar un número
+   de versión concreto (que acabaría desapareciendo del repo con el
+   tiempo), deja que `apt` resuelva siempre la más reciente disponible en
+   el repo CUDA en el momento en que se ejecute el script. Junto con
+   `nvidia-open` instala cabeceras del kernel, `dkms`, `nvidia-settings`
+   y las librerías de Vulkan.
+4. Deshabilita el driver libre `nouveau` (blacklist vía
+   `/etc/modprobe.d/blacklist-nouveau.conf`).
+5. Añade los parámetros de arranque de NVIDIA (`nvidia-drm.modeset=1`,
+   `nvidia-drm.fbdev=1`) a `GRUB_CMDLINE_LINUX_DEFAULT`, **sin
+   sobrescribir** el resto de parámetros que ya tuvieras (`resume=`,
+   `iommu=`, etc.) — se guarda una copia de seguridad de
+   `/etc/default/grub` antes de tocarlo.
+6. Habilita los servicios de suspensión/hibernación de NVIDIA
+   (`nvidia-suspend`, `nvidia-hibernate`, `nvidia-resume`).
+7. Si detecta Secure Boot activado (`mokutil --sb-state`), **avisa pero
+   no actúa**: el enrollment de la clave MOK es un procedimiento manual
+   e interactivo (requiere reiniciar y confirmar en la pantalla de MOK
+   Manager) y automatizarlo sería más frágil que útil. Consulta
+   `MANUAL.md` antes de reiniciar si esto te aplica.
+
+### Limitación de compatibilidad: solo GPUs Turing en adelante
+
+`nvidia-open` es el **módulo de kernel de código abierto** de NVIDIA (a
+diferencia del driver propietario clásico, cerrado). Solo soporta GPUs de
+la arquitectura **Turing en adelante**: RTX 20xx, GTX 16xx, RTX
+30xx/40xx/50xx y posteriores. En una GPU **anterior** (GTX 10xx y previas:
+Pascal, Maxwell, etc.) este driver **no cargará**.
+
+El script **no comprueba el modelo concreto** de tu GPU, solo que el
+fabricante sea NVIDIA — el aviso se muestra en pantalla antes de pedir
+confirmación, pero queda en tus manos saber si tu tarjeta es compatible.
+Si tienes una GPU anterior a Turing, necesitas el paquete `nvidia-driver`
+(el propietario clásico) en su lugar, instalado a mano.
+
+> Probado funcionando sin problemas con la versión 610 (la más reciente
+> disponible en el repo CUDA en el momento de la prueba) en una GPU
+> compatible.
+
+### Comprobar y revertir
+
+```bash
+# Verificar que el driver está activo
+nvidia-smi
+
+# Volver a nouveau (driver libre)
+sudo apt remove --purge nvidia-open nvidia-kernel-open-dkms nvidia-settings
+sudo rm /etc/modprobe.d/blacklist-nouveau.conf
+sudo cp /etc/default/grub.bak.<fecha> /etc/default/grub
+sudo update-grub
+sudo update-initramfs -u
+sudo reboot
 ```
 
 ---

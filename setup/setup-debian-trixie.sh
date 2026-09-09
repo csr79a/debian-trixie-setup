@@ -441,8 +441,13 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
   # y de paso no se toca el keyring personal del usuario solo para
   # comprobar una huella digital. Se limpia el directorio al terminar,
   # pase lo que pase (trap).
+  # Nota: un trap "RETURN" solo se dispara al salir de una función o de
+  # un script "sourced", no a nivel superior de un script normal. Aquí se
+  # usa EXIT (y se desactiva a mano al terminar) para que, si gpg fallara
+  # y set -e abortara el script, el directorio temporal igualmente se
+  # borre en vez de quedar huérfano.
   MOZILLA_GPG_TMPHOME="$(mktemp -d)"
-  trap 'rm -rf "$MOZILLA_GPG_TMPHOME"' RETURN
+  trap 'rm -rf "$MOZILLA_GPG_TMPHOME"' EXIT
 
   MOZILLA_EXPECTED_FPR="35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3"
   MOZILLA_ACTUAL_FPR="$(
@@ -452,7 +457,7 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
   )"
 
   rm -rf "$MOZILLA_GPG_TMPHOME"
-  trap - RETURN
+  trap - EXIT
 
   if [[ "$MOZILLA_ACTUAL_FPR" == "$MOZILLA_EXPECTED_FPR" ]]; then
     echo "Huella digital de la clave de Mozilla verificada correctamente."
@@ -500,14 +505,161 @@ EOF
     sudo apt update
     sudo apt install -y firefox
 
-    if confirm "¿Instalar también el paquete de idioma español (firefox-l10n-es)?"; then
-      sudo apt install -y firefox-l10n-es
+    # Los paquetes de idioma de Mozilla no usan el código de 2 letras a
+    # secas: van por variante regional (es-es, es-ar, es-mx...), igual
+    # que ya hacía firefox-esr-l10n-*. "firefox-l10n-es" no siempre
+    # existe de verdad; se comprueba en tiempo de ejecución cuál sí,
+    # empezando por la variante de España.
+    FIREFOX_L10N_CANDIDATES=(firefox-l10n-es-es firefox-l10n-es-mx firefox-l10n-es-ar firefox-l10n-es)
+    FIREFOX_L10N_PKG=""
+    for pkg in "${FIREFOX_L10N_CANDIDATES[@]}"; do
+      if apt-cache show "$pkg" >/dev/null 2>&1; then
+        FIREFOX_L10N_PKG="$pkg"
+        break
+      fi
+    done
+
+    if confirm "¿Instalar también el paquete de idioma español${FIREFOX_L10N_PKG:+ ($FIREFOX_L10N_PKG)}?"; then
+      if [[ -n "$FIREFOX_L10N_PKG" ]]; then
+        sudo apt install -y "$FIREFOX_L10N_PKG"
+      else
+        echo "Aviso: no se encontró ningún paquete de idioma español disponible" \
+             "(se probó: ${FIREFOX_L10N_CANDIDATES[*]}). Busca el nombre exacto con:" \
+             "apt-cache search firefox-l10n"
+      fi
     fi
 
     echo "Firefox de Mozilla instalado. Comprueba la versión con: firefox --version"
   fi
 else
   echo "Se omite la sustitución de Firefox."
+fi
+
+# ----------------------------------------------------------------------
+# 5d. Driver NVIDIA (opcional)
+# ----------------------------------------------------------------------
+#
+# Solo se ofrece si se detecta una GPU NVIDIA por lspci. El patrón es
+# detectar -> preguntar -> instalar por repo oficial (cuda-keyring), sin
+# pinear versión: "nvidia-open" (sin "=X.Y.Z-N") deja que apt resuelva
+# siempre la más reciente disponible en el repo CUDA en el momento en
+# que se ejecute el script, en vez de quedarse anclado a una versión
+# concreta que acabará desapareciendo del repo.
+#
+# LIMITACIÓN CONOCIDA: "nvidia-open" (el módulo de kernel open-source)
+# solo soporta GPUs Turing en adelante (RTX 20xx, GTX 16xx, y más
+# recientes). En GPUs anteriores (Pascal, Maxwell...) no carga. El
+# script no distingue el modelo concreto, solo detecta "es NVIDIA" — el
+# aviso se muestra en pantalla antes de pedir confirmación, pero queda
+# en manos del usuario saber si su GPU es compatible. Probado
+# funcionando (driver 610, la última disponible en el momento) en una
+# GPU compatible.
+#
+# Secure Boot / MOK enrollment queda deliberadamente FUERA de este
+# script: es un procedimiento manual e interactivo (requiere reiniciar y
+# confirmar en la pantalla de MOK Manager), así que aquí solo se detecta
+# y se avisa, remitiendo a MANUAL.md. Automatizarlo sería más frágil que
+# útil para un equipo personal.
+
+GPU_INFO="$(lspci | grep -Ei 'vga|3d' || true)"
+
+if echo "$GPU_INFO" | grep -qi nvidia; then
+  echo
+  echo "GPU NVIDIA detectada:"
+  echo "  $(echo "$GPU_INFO" | grep -i nvidia)"
+  echo
+  echo "Aviso: este paso instala 'nvidia-open', el módulo de kernel de código"
+  echo "abierto de NVIDIA. Solo soporta GPUs Turing en adelante (RTX 20xx,"
+  echo "GTX 16xx, RTX 30xx/40xx/50xx...). En una GPU más antigua (GTX 10xx"
+  echo "y anteriores: Pascal, Maxwell, etc.) este driver no cargará; en ese"
+  echo "caso necesitarías el paquete 'nvidia-driver' (el propietario clásico,"
+  echo "no open-source) en su lugar. El script no comprueba el modelo"
+  echo "concreto, solo que el fabricante sea NVIDIA."
+
+  if confirm "¿Instalar el driver propietario de NVIDIA (nvidia-open, última versión disponible en el repo)?"; then
+
+    # Repo oficial de NVIDIA (cuda-keyring). Se comprueba si ya está
+    # presente antes de descargar/instalar nada, para que volver a
+    # ejecutar el script no lo repita innecesariamente.
+    if ! dpkg -s cuda-keyring >/dev/null 2>&1; then
+      echo "Añadiendo el repositorio de NVIDIA (cuda-keyring)..."
+      NVIDIA_KEYRING_TMP="$(mktemp --suffix=.deb)"
+      wget -qO "$NVIDIA_KEYRING_TMP" \
+        https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/cuda-keyring_1.1-1_all.deb
+      sudo dpkg -i "$NVIDIA_KEYRING_TMP"
+      rm -f "$NVIDIA_KEYRING_TMP"
+      sudo apt update
+    else
+      echo "El repositorio de NVIDIA (cuda-keyring) ya está instalado."
+    fi
+
+    echo "Instalando el driver NVIDIA (sin pinear versión -> se resuelve la más reciente del repo)..."
+    sudo apt install -y \
+      linux-headers-amd64 \
+      firmware-misc-nonfree \
+      dkms \
+      nvidia-open \
+      nvidia-kernel-open-dkms \
+      nvidia-settings \
+      libvulkan-dev \
+      nvidia-vulkan-icd \
+      vulkan-tools \
+      vulkan-validationlayers
+
+    echo "Deshabilitando el driver nouveau..."
+    sudo tee /etc/modprobe.d/blacklist-nouveau.conf >/dev/null <<'EOF'
+blacklist nouveau
+options nouveau modeset=0
+EOF
+
+    echo "Configurando GRUB para KMS de NVIDIA..."
+    NVIDIA_GRUB_BACKUP="/etc/default/grub.bak.$(date +%Y%m%d%H%M%S)"
+    sudo cp /etc/default/grub "$NVIDIA_GRUB_BACKUP"
+    echo "Copia de seguridad: $NVIDIA_GRUB_BACKUP"
+
+    # En vez de sobrescribir GRUB_CMDLINE_LINUX_DEFAULT entero (lo que
+    # borraría cualquier otro parámetro de arranque que ya tuvieras, p. ej.
+    # resume=, iommu=, mitigations=, etc.), se añaden solo los parámetros
+    # de NVIDIA a lo que ya hubiera. Se comprueba clave por clave para no
+    # duplicarlos si el script se re-ejecuta.
+    NVIDIA_GRUB_PARAMS=(nvidia-drm.modeset=1 nvidia-drm.fbdev=1)
+    CURRENT_CMDLINE="$(grep -oP '^GRUB_CMDLINE_LINUX_DEFAULT="\K[^"]*' /etc/default/grub || true)"
+
+    NEW_CMDLINE="$CURRENT_CMDLINE"
+    for param in "${NVIDIA_GRUB_PARAMS[@]}"; do
+      key="${param%%=*}"
+      if [[ "$NEW_CMDLINE" != *"$key"* ]]; then
+        NEW_CMDLINE="${NEW_CMDLINE:+$NEW_CMDLINE }${param}"
+      fi
+    done
+
+    if grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' /etc/default/grub; then
+      sudo sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"${NEW_CMDLINE}\"|" /etc/default/grub
+    else
+      echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${NEW_CMDLINE}\"" | sudo tee -a /etc/default/grub >/dev/null
+    fi
+    echo "GRUB_CMDLINE_LINUX_DEFAULT resultante: ${NEW_CMDLINE}"
+
+    sudo update-grub
+    sudo update-initramfs -u
+
+    echo "Habilitando servicios de suspensión/hibernación de NVIDIA..."
+    sudo systemctl enable nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service
+
+    NVIDIA_INSTALLED=1
+
+    # Aviso de Secure Boot: solo detecta y remite a MANUAL.md, nunca
+    # ejecuta el enrollment de la clave MOK automáticamente.
+    if command -v mokutil >/dev/null 2>&1 && mokutil --sb-state 2>/dev/null | grep -qi "enabled"; then
+      echo
+      echo "⚠ Secure Boot está ACTIVADO en este sistema."
+      echo "  El módulo del kernel de NVIDIA no cargará hasta que firmes la clave MOK."
+      echo "  Este paso es manual (requiere reiniciar y confirmar en el MOK Manager)."
+      echo "  Consulta la sección 'Secure Boot / NVIDIA' en MANUAL.md ANTES de reiniciar."
+    fi
+  else
+    echo "Se omite la instalación del driver NVIDIA."
+  fi
 fi
 
 # ----------------------------------------------------------------------
@@ -560,3 +712,14 @@ Notas:
     original en /etc/apt/sources.list.bak.<fecha> por si quieres
     revisarla o revertir el cambio.
 EOF
+
+if [[ "${NVIDIA_INSTALLED:-0}" -eq 1 ]]; then
+  cat <<'EOF'
+
+  - Driver NVIDIA instalado (nvidia-open, última versión del repo).
+    Reinicia para que cargue el nuevo driver. Si tienes Secure Boot
+    activado, no reinicies sin antes seguir la sección 'Secure Boot /
+    NVIDIA' de MANUAL.md (enrollment de la clave MOK).
+    Verifica tras reiniciar con: nvidia-smi
+EOF
+fi
