@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# cleanup-debian-trixie.sh
+# cleanup-debian-trixie.sh — Limpiador de Debian Trixie csr79a
 #
 # Elimina aplicaciones de KDE Plasma que Debian instala por defecto junto
 # a la tarea "KDE Plasma Workspaces" pero que muchos usuarios no llegan a
@@ -9,9 +9,10 @@
 # setup-debian-trixie.sh: ese script instala, este quita.
 #
 # El script está organizado en GRUPOS. Cada grupo se revisa y confirma
-# por separado, y solo intenta eliminar los paquetes de ese grupo que
-# estén realmente instalados. Por defecto usa "apt remove" (deja los
-# ficheros de configuración); usa --purge si además quieres borrarlos.
+# por separado (pantalla whiptail), y solo intenta eliminar los paquetes
+# de ese grupo que estén realmente instalados. Por defecto usa "apt
+# remove" (deja los ficheros de configuración); usa --purge si además
+# quieres borrarlos.
 #
 # Uso:
 #   chmod +x cleanup-debian-trixie.sh
@@ -23,6 +24,14 @@
 # Licencia: MIT
 
 set -euo pipefail
+
+TITLE="Limpiador de Debian Trixie csr79a"
+VERSION="1.0.0"
+
+log()   { echo -e "\e[1;34m[*]\e[0m $*"; }
+ok()    { echo -e "\e[1;32m[OK]\e[0m $*"; }
+warn()  { echo -e "\e[1;33m[!]\e[0m $*"; }
+error() { echo -e "\e[1;31m[ERROR]\e[0m $*" >&2; exit 1; }
 
 # ----------------------------------------------------------------------
 # 0. Opciones de línea de comandos
@@ -50,7 +59,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       echo "Uso: $0 [-y|--yes] [--purge] [--imagemagick]"
-      echo "  -y, --yes      No pedir confirmación por grupo (modo no interactivo)."
+      echo "  -y, --yes      No pedir confirmación por grupo (modo no interactivo, sin pantallas)."
       echo "  --purge        Usar 'apt purge' en vez de 'apt remove' (borra también config)."
       echo "  --imagemagick  Evaluar también la eliminación de ImageMagick (grupo aparte, ver README)."
       exit 0
@@ -62,40 +71,83 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Pequeño helper para confirmaciones. En modo -y no se muestra ninguna
+# pantalla; en modo interactivo, cada decisión se muestra como una
+# pantalla whiptail --yesno (devuelve 0=Sí / 1=No, usable directamente
+# en un "if confirm...").
 confirm() {
   local prompt="$1"
+  local height="${2:-16}"
+  local width="${3:-74}"
   if [[ "$ASSUME_YES" -eq 1 ]]; then
     return 0
   fi
-  local ans
-  read -rp "$prompt [y/N] " ans
-  [[ "${ans,,}" == "y" ]]
+  whiptail --title "$TITLE" --yesno "$prompt" "$height" "$width"
 }
+
+# Con -y también evitamos que apt/debconf se queden esperando input
+# (p. ej. algún paquete con prompt de debconf al desinstalarse). OJO:
+# esto silencia TODOS los prompts de debconf durante la limpieza, no
+# solo los relacionados con los paquetes de este script, así que solo
+# se activa en modo no interactivo explícito.
+if [[ "$ASSUME_YES" -eq 1 ]]; then
+  export DEBIAN_FRONTEND=noninteractive
+fi
 
 # ----------------------------------------------------------------------
 # 1. Comprobaciones previas
 # ----------------------------------------------------------------------
 
 if [[ $EUID -eq 0 ]]; then
-  echo "No ejecutes este script directamente como root. Usa un usuario normal;" \
-       "se te pedirá la contraseña de sudo cuando haga falta." >&2
-  exit 1
+  error "No ejecutes este script directamente como root. Usa un usuario normal; se te pedirá la contraseña de sudo cuando haga falta."
 fi
 
 if ! command -v apt >/dev/null 2>&1; then
-  echo "Este script está pensado para sistemas basados en APT (Debian/derivados)." >&2
-  exit 1
+  error "Este script está pensado para sistemas basados en APT (Debian/derivados)."
 fi
 
 if ! command -v sudo >/dev/null 2>&1; then
-  echo "No se encontró el comando 'sudo' en este sistema." >&2
-  exit 1
+  error "No se encontró el comando 'sudo' en este sistema. Revisa la sección 'Requisitos previos: dejar sudo listo' del README antes de ejecutar este script."
 fi
 
-echo "Comprobando permisos de sudo..."
+if ! command -v whiptail >/dev/null 2>&1; then
+  log "Instalando whiptail (necesario para las pantallas de este script)..."
+  sudo apt update
+  sudo apt install -y whiptail
+fi
+
+log "Comprobando permisos de sudo..."
 if ! sudo -v; then
-  echo "No se pudieron validar los permisos de sudo." >&2
-  exit 1
+  error "No se pudieron validar los permisos de sudo. Revisa la sección 'Requisitos previos: dejar sudo listo' del README."
+fi
+
+# ----------------------------------------------------------------------
+# Pantalla de bienvenida
+# ----------------------------------------------------------------------
+
+WELCOME_MSG="Versión del Limpiador de Debian Trixie csr79a ${VERSION}
+
+Este programa revisa, grupo por grupo, aplicaciones de KDE Plasma instaladas por defecto en Debian que muchos usuarios no llegan a usar (suite PIM/Kontact, accesibilidad, Konqueror, xterm, KDE Connect).
+
+No se eliminará nada sin confirmación explícita de cada grupo."
+
+if [[ "$PURGE" -eq 1 ]]; then
+  WELCOME_MSG+="
+
+Modo --purge activo: se usará 'apt purge' (borra también archivos de configuración)."
+fi
+
+confirm "$WELCOME_MSG
+
+¿Desea continuar?" 20 74 || exit 0
+
+DETECTED_CODENAME=""
+if [[ -r /etc/os-release ]]; then
+  . /etc/os-release
+  DETECTED_CODENAME="${VERSION_CODENAME:-}"
+  if [[ "$DETECTED_CODENAME" != "trixie" ]]; then
+    confirm "Aviso: este script está probado en Debian trixie (13).\n\nSe ha detectado: ${PRETTY_NAME:-desconocido}.\n\nLos nombres de paquete de este script se verificaron para trixie; en otras versiones podrían no existir o haber cambiado.\n\n¿Quieres continuar de todas formas?" || exit 1
+  fi
 fi
 
 # ----------------------------------------------------------------------
@@ -106,14 +158,16 @@ is_installed() {
   dpkg -s "$1" >/dev/null 2>&1
 }
 
-# remove_group <nombre> <pkg1> [pkg2 ...]
-# Filtra a los paquetes realmente instalados, los enumera, pide
-# confirmación de grupo y, si se acepta, deja que "apt remove/purge"
-# muestre su propio resumen de la transacción (dependencias que se
-# arrastran, huérfanos, etc.) antes de tocar nada.
+# remove_group <nombre> <descripcion_paquetes> <pkg1> [pkg2 ...]
+# Filtra a los paquetes realmente instalados, pide confirmación de grupo
+# en una pantalla whiptail (incluyendo qué paquetes se verían afectados)
+# y, si se acepta, deja que "apt remove/purge" muestre su propio resumen
+# de la transacción (dependencias que se arrastran, huérfanos, etc.) en
+# la terminal antes de tocar nada.
 remove_group() {
   local group_name="$1"
-  shift
+  local group_desc="$2"
+  shift 2
   local candidates=("$@")
   local to_remove=()
 
@@ -123,16 +177,14 @@ remove_group() {
     fi
   done
 
-  echo
-  echo "== Grupo: $group_name =="
+  log "Grupo: $group_name"
   if [[ ${#to_remove[@]} -eq 0 ]]; then
-    echo "Nada que hacer (ninguno de estos paquetes está instalado)."
+    ok "Nada que hacer (ninguno de estos paquetes está instalado)."
     return
   fi
 
-  echo "Instalados en este grupo: ${to_remove[*]}"
-  if ! confirm "¿Eliminar este grupo con 'apt $APT_ACTION'?"; then
-    echo "Grupo omitido."
+  if ! confirm "Grupo: ${group_name}\n\n${group_desc}\n\nInstalados en este grupo: ${to_remove[*]}\n\n¿Eliminar este grupo con 'apt ${APT_ACTION}'?" 18 76; then
+    warn "Grupo omitido."
     return
   fi
 
@@ -167,6 +219,7 @@ PIM_GROUP=(
   korganizer
   akregator
 )
+PIM_DESC="KMail, KAddressBook, KTnef, editores de tema, Sieve, exportador PIM, KOrganizer, Akregator. Comparten árbol de dependencias con Akonadi."
 
 # GRUPO 2 — Accesibilidad
 # Independientes del grupo PIM: no se eliminan solos al quitar KMail.
@@ -175,6 +228,7 @@ ACCESSIBILITY_GROUP=(
   kmouth
   kontrast
 )
+ACCESSIBILITY_DESC="KMouseTool, KMouth, Kontrast. Independientes del grupo PIM."
 
 # GRUPO 3 — Konqueror
 # Navegador/gestor de archivos antiguo de KDE, sin relación con los
@@ -182,6 +236,7 @@ ACCESSIBILITY_GROUP=(
 KONQUEROR_GROUP=(
   konqueror
 )
+KONQUEROR_DESC="Navegador/gestor de archivos antiguo de KDE."
 
 # GRUPO 3b — xterm
 # Emulador de terminal genérico de X11, nada que ver con KDE ni con los
@@ -190,6 +245,7 @@ KONQUEROR_GROUP=(
 XTERM_GROUP=(
   xterm
 )
+XTERM_DESC="Emulador de terminal genérico de X11, sin relación con KDE Plasma."
 
 # GRUPO 3c — KDE Connect
 # Integra el móvil con el escritorio (notificaciones, compartir
@@ -198,7 +254,10 @@ XTERM_GROUP=(
 # xterm, así que va en su propio grupo.
 KDECONNECT_GROUP=(
   kdeconnect
+  kdeconnect-libs
+  qml6-module-org-kde-kdeconnect
 )
+KDECONNECT_DESC="KDE Connect (app), sus librerías internas (kdeconnect-libs) y el módulo QML (qml6-module-org-kde-kdeconnect). Independiente del resto de grupos."
 
 # GRUPO 4 (opcional, --imagemagick) — ImageMagick
 # ¡OJO! No es una app de Plasma: es una utilidad/librería que usan otros
@@ -207,52 +266,41 @@ KDECONNECT_GROUP=(
 #   apt-cache rdepends imagemagick
 # Por eso este grupo NO se evalúa a menos que pases --imagemagick, y
 # siempre se muestra rdepends antes de pedir confirmación.
-IMAGEMAGICK_GROUP=(
-  imagemagick
-)
 
 # ----------------------------------------------------------------------
 # 4. Ejecución
 # ----------------------------------------------------------------------
 
-echo "Este script revisará, grupo por grupo, aplicaciones de KDE Plasma"
-echo "instaladas por defecto en Debian que muchos usuarios no llegan a usar."
-echo "No se eliminará nada sin confirmación explícita de cada grupo."
-
-remove_group "Suite PIM / Kontact (KMail, KAddressBook, KTnef, editores de tema, Sieve, exportador PIM, KOrganizer, Akregator)" "${PIM_GROUP[@]}"
-remove_group "Accesibilidad (KMouseTool, KMouth, Kontrast)" "${ACCESSIBILITY_GROUP[@]}"
-remove_group "Konqueror" "${KONQUEROR_GROUP[@]}"
-remove_group "xterm" "${XTERM_GROUP[@]}"
-remove_group "KDE Connect" "${KDECONNECT_GROUP[@]}"
+remove_group "Suite PIM / Kontact" "$PIM_DESC" "${PIM_GROUP[@]}"
+remove_group "Accesibilidad" "$ACCESSIBILITY_DESC" "${ACCESSIBILITY_GROUP[@]}"
+remove_group "Konqueror" "$KONQUEROR_DESC" "${KONQUEROR_GROUP[@]}"
+remove_group "xterm" "$XTERM_DESC" "${XTERM_GROUP[@]}"
+remove_group "KDE Connect" "$KDECONNECT_DESC" "${KDECONNECT_GROUP[@]}"
 
 if [[ "$INCLUDE_IMAGEMAGICK" -eq 1 ]]; then
-  echo
-  echo "== Grupo opcional: ImageMagick =="
+  log "Grupo opcional: ImageMagick"
   if is_installed imagemagick; then
-    echo "ImageMagick no es una app de Plasma: puede que otros programas lo usen"
-    echo "por debajo. Paquetes que dependen de él (apt-cache rdepends):"
-    apt-cache rdepends imagemagick | sed -n '1,15p'
-    echo
-    if confirm "¿Aun así quieres eliminarlo?"; then
+    RDEPENDS="$(apt-cache rdepends imagemagick | sed -n '1,15p')"
+    warn "ImageMagick no es una app de Plasma: puede que otros programas lo usen por debajo."
+    echo "$RDEPENDS"
+    if confirm "ImageMagick no es una app de Plasma: puede que otros programas lo usen por debajo (miniaturas, importación/exportación de imágenes).\n\nPaquetes que dependen de él (primeras líneas, lista completa arriba en la terminal):\n\n$(echo "$RDEPENDS" | head -n 8)\n\n¿Aun así quieres eliminarlo?" 20 76; then
       if [[ "$ASSUME_YES" -eq 1 ]]; then
         sudo apt "$APT_ACTION" -y imagemagick
       else
         sudo apt "$APT_ACTION" imagemagick
       fi
     else
-      echo "Se omite ImageMagick."
+      warn "Se omite ImageMagick."
     fi
   else
-    echo "ImageMagick no está instalado."
+    ok "ImageMagick no está instalado."
   fi
 fi
 
-echo
 if confirm "¿Ejecutar 'apt autoremove' para limpiar dependencias huérfanas?"; then
   sudo apt autoremove
 fi
 
-echo
 if confirm "¿Ejecutar 'apt autoclean' para limpiar el caché de paquetes .deb descargados que ya no están disponibles?"; then
   sudo apt autoclean
 fi
@@ -271,3 +319,7 @@ Notas:
     grupo y dentro de cada "apt remove/purge" verás el resumen real de
     la transacción antes de que se aplique (salvo en modo -y).
 EOF
+
+if [[ "$ASSUME_YES" -ne 1 ]]; then
+  whiptail --title "$TITLE" --msgbox "Limpieza completada.\n\nRevisa el resumen impreso en la terminal para los detalles." 12 70
+fi

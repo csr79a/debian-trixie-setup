@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# setup-debian-trixie.sh
+# setup-debian-trixie.sh — Configurador de Debian Trixie csr79a
 #
 # Script de configuración inicial para Debian 13 (trixie) con KDE Plasma.
 # Configura los repositorios oficiales (deb822), actualiza el sistema,
@@ -8,6 +8,10 @@
 # microcode correcto según el fabricante de CPU, añade el remoto de
 # Flathub, y ofrece (opcional, tras detectar el hardware) el driver
 # NVIDIA y switcheroo-control si hay GPU híbrida.
+#
+# Interfaz por pantallas (whiptail) para bienvenida, decisiones y resumen
+# final; el progreso de comandos largos (apt, sed, etc.) se muestra como
+# texto normal de terminal.
 #
 # Uso:
 #   chmod +x setup-debian-trixie.sh
@@ -17,6 +21,14 @@
 # Licencia: MIT
 
 set -euo pipefail
+
+TITLE="Configurador de Debian Trixie csr79a"
+VERSION="1.0.0"
+
+log()   { echo -e "\e[1;34m[*]\e[0m $*"; }
+ok()    { echo -e "\e[1;32m[OK]\e[0m $*"; }
+warn()  { echo -e "\e[1;33m[!]\e[0m $*"; }
+error() { echo -e "\e[1;31m[ERROR]\e[0m $*" >&2; exit 1; }
 
 # ----------------------------------------------------------------------
 # 0. Opciones de línea de comandos
@@ -32,7 +44,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       echo "Uso: $0 [-y|--yes]"
-      echo "  -y, --yes   No pedir confirmación (modo no interactivo)."
+      echo "  -y, --yes   No pedir confirmación (modo no interactivo, sin pantallas)."
       exit 0
       ;;
     *)
@@ -42,15 +54,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Pequeño helper para confirmaciones, respeta -y/--yes.
+# Pequeño helper para confirmaciones. En modo -y no se muestra ninguna
+# pantalla (whiptail se salta por completo); en modo interactivo, cada
+# decisión se muestra como una pantalla whiptail --yesno, que ya
+# devuelve 0 (Sí) / 1 (No) directamente utilizable en un "if confirm...".
 confirm() {
   local prompt="$1"
+  local height="${2:-14}"
+  local width="${3:-70}"
   if [[ "$ASSUME_YES" -eq 1 ]]; then
     return 0
   fi
-  local ans
-  read -rp "$prompt [y/N] " ans
-  [[ "${ans,,}" == "y" ]]
+  whiptail --title "$TITLE" --yesno "$prompt" "$height" "$width"
 }
 
 # Con -y también evitamos que apt/debconf se queden esperando input
@@ -66,40 +81,43 @@ fi
 # ----------------------------------------------------------------------
 
 if [[ $EUID -eq 0 ]]; then
-  echo "No ejecutes este script directamente como root. Usa un usuario normal;" \
-       "se te pedirá la contraseña de sudo cuando haga falta." >&2
-  exit 1
+  error "No ejecutes este script directamente como root. Usa un usuario normal; se te pedirá la contraseña de sudo cuando haga falta."
 fi
 
 if ! command -v apt >/dev/null 2>&1; then
-  echo "Este script está pensado para sistemas basados en APT (Debian/derivados)." >&2
-  exit 1
+  error "Este script está pensado para sistemas basados en APT (Debian/derivados)."
 fi
 
 if ! command -v sudo >/dev/null 2>&1; then
-  echo "No se encontró el comando 'sudo' en este sistema." >&2
-  echo "Revisa la sección 'Requisitos previos: dejar sudo listo' del README" \
-       "antes de ejecutar este script." >&2
-  exit 1
+  error "No se encontró el comando 'sudo' en este sistema. Revisa la sección 'Requisitos previos: dejar sudo listo' del README antes de ejecutar este script."
 fi
 
-# Comprueba (y cachea) las credenciales de sudo aquí, al principio, en vez
-# de dejar que el primer 'sudo tee'/'sudo apt' de más abajo sea quien
-# descubra que el usuario no está en el grupo sudo. Si falla, sudo ya
-# imprime su propio mensaje de error explicando el motivo.
-echo "Comprobando permisos de sudo..."
+# whiptail hace falta para las pantallas de este propio script; si no
+# está (Debian mínimo sin tareas de escritorio), se instala antes de
+# mostrar nada.
+if ! command -v whiptail >/dev/null 2>&1; then
+  log "Instalando whiptail (necesario para las pantallas de este instalador)..."
+  sudo apt update
+  sudo apt install -y whiptail
+fi
+
+log "Comprobando permisos de sudo..."
 if ! sudo -v; then
-  echo "No se pudieron validar los permisos de sudo. Revisa la sección" \
-       "'Requisitos previos: dejar sudo listo' del README." >&2
-  exit 1
+  error "No se pudieron validar los permisos de sudo. Revisa la sección 'Requisitos previos: dejar sudo listo' del README."
 fi
 
+# ----------------------------------------------------------------------
+# Pantalla de bienvenida
+# ----------------------------------------------------------------------
+
+confirm "Versión del Configurador de Debian Trixie csr79a ${VERSION}\n\nEste programa configura los repositorios oficiales, actualiza el sistema, instala un set de paquetes de desarrollo/multimedia/sistema, y ofrece de forma opcional zram, Firefox de Mozilla, driver NVIDIA y switcheroo-control según el hardware detectado.\n\n¿Desea continuar?" 16 70 || exit 0
+
+DETECTED_CODENAME=""
 if [[ -r /etc/os-release ]]; then
   . /etc/os-release
-  if [[ "${VERSION_CODENAME:-}" != "trixie" ]]; then
-    echo "Aviso: este script está probado en Debian trixie (13)." \
-         "Se ha detectado: ${PRETTY_NAME:-desconocido}."
-    confirm "¿Quieres continuar de todas formas?" || exit 1
+  DETECTED_CODENAME="${VERSION_CODENAME:-}"
+  if [[ "$DETECTED_CODENAME" != "trixie" ]]; then
+    confirm "Aviso: este script está probado en Debian trixie (13).\n\nSe ha detectado: ${PRETTY_NAME:-desconocido}.\n\n¿Quieres continuar de todas formas?" || exit 1
   fi
 fi
 
@@ -119,27 +137,21 @@ SOURCES_FILE="/etc/apt/sources.list.d/debian.sources"
 # (no comentarios ni vacías), se hace una copia de seguridad y se comentan
 # todas, dejando que sea únicamente debian.sources quien defina los repos.
 if [[ -f "$LEGACY_SOURCES" ]] && grep -qE '^\s*deb(-src)?\s' "$LEGACY_SOURCES"; then
-  echo "Se ha detectado contenido activo en $LEGACY_SOURCES (típico de una" \
-       "instalación desde la ISO oficial, a veces con una entrada de CD-ROM)."
-  echo "Para evitar repositorios duplicados, se comentará su contenido," \
-       "dejando que $SOURCES_FILE (creado a continuación) sea la única" \
-       "fuente de los repos oficiales de Debian."
-  if confirm "¿Continuar? (se guarda una copia de seguridad antes de tocar nada)"; then
+  if confirm "Se ha detectado contenido activo en $LEGACY_SOURCES (típico de una instalación desde la ISO oficial, a veces con una entrada de CD-ROM).\n\nPara evitar repositorios duplicados, se comentará su contenido, dejando que $SOURCES_FILE (creado a continuación) sea la única fuente de los repos oficiales de Debian.\n\n¿Continuar? (se guarda una copia de seguridad antes de tocar nada)" 16 76; then
     LEGACY_BACKUP="${LEGACY_SOURCES}.bak.$(date +%Y%m%d%H%M%S)"
     sudo cp "$LEGACY_SOURCES" "$LEGACY_BACKUP"
-    echo "Copia de seguridad: $LEGACY_BACKUP"
+    ok "Copia de seguridad: $LEGACY_BACKUP"
     sudo sed -i -E '/^\s*deb(-src)?\s/ s/^/# desactivado por setup-debian-trixie.sh -- /' "$LEGACY_SOURCES"
-    echo "Contenido de $LEGACY_SOURCES comentado."
+    ok "Contenido de $LEGACY_SOURCES comentado."
   else
-    echo "Se omite la limpieza de $LEGACY_SOURCES. Es probable que 'apt update'" \
-         "muestre avisos de repos duplicados o falle en la entrada de CD-ROM."
+    warn "Se omite la limpieza de $LEGACY_SOURCES. Es probable que 'apt update' muestre avisos de repos duplicados o falle en la entrada de CD-ROM."
   fi
 fi
 
 if [[ -f "$SOURCES_FILE" ]]; then
-  echo "Ya existe $SOURCES_FILE, no se sobrescribe. Revísalo manualmente si hace falta."
+  warn "Ya existe $SOURCES_FILE, no se sobrescribe. Revísalo manualmente si hace falta."
 else
-  echo "Escribiendo $SOURCES_FILE ..."
+  log "Escribiendo $SOURCES_FILE ..."
   sudo tee "$SOURCES_FILE" >/dev/null <<'EOF'
 Types: deb
 URIs: https://deb.debian.org/debian
@@ -159,13 +171,14 @@ Suites: trixie-backports
 Components: main contrib non-free non-free-firmware
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 EOF
+  ok "$SOURCES_FILE escrito."
 fi
 
 # Nota para quien publique/use este script: este sources.list activa
 # los componentes "contrib", "non-free" y "non-free-firmware" (software
 # y firmware no libres). Coméntalo en tu README si te importa.
 
-echo "Actualizando índices de paquetes..."
+log "Actualizando índices de paquetes..."
 sudo apt update
 
 # Tras cambiar/crear los repos (o añadir backports) es buena práctica
@@ -174,14 +187,14 @@ sudo apt update
 if confirm "¿Quieres hacer 'apt full-upgrade' antes de continuar?"; then
   sudo apt full-upgrade -y
 else
-  echo "Se omite full-upgrade. Puedes ejecutarlo luego con: sudo apt full-upgrade"
+  warn "Se omite full-upgrade. Puedes ejecutarlo luego con: sudo apt full-upgrade"
 fi
 
 # ----------------------------------------------------------------------
 # 3. Detección de CPU para el microcode correcto
 # ----------------------------------------------------------------------
 
-CPU_VENDOR="$(grep -m1 'vendor_id' /proc/cpuinfo | awk '{print $NF}')"
+CPU_VENDOR="$(grep -m1 'vendor_id' /proc/cpuinfo | awk '{print $NF}' || true)"
 
 case "$CPU_VENDOR" in
   GenuineIntel)
@@ -191,14 +204,13 @@ case "$CPU_VENDOR" in
     MICROCODE_PKG="amd64-microcode"
     ;;
   *)
-    echo "Aviso: no se ha podido determinar el fabricante de CPU (vendor_id='$CPU_VENDOR')." \
-         "No se instalará ningún paquete de microcode automáticamente."
+    warn "No se ha podido determinar el fabricante de CPU (vendor_id='$CPU_VENDOR'). No se instalará ningún paquete de microcode automáticamente."
     MICROCODE_PKG=""
     ;;
 esac
 
 if [[ -n "$MICROCODE_PKG" ]]; then
-  echo "CPU detectada: $CPU_VENDOR -> se instalará $MICROCODE_PKG"
+  ok "CPU detectada: $CPU_VENDOR -> se instalará $MICROCODE_PKG"
 fi
 
 # ----------------------------------------------------------------------
@@ -260,22 +272,25 @@ if [[ -n "$MICROCODE_PKG" ]]; then
 fi
 
 echo
-echo "Se van a instalar los siguientes paquetes:"
+log "Se van a instalar los siguientes paquetes:"
 printf '  - %s\n' "${PACKAGES[@]}"
 echo
-confirm "¿Continuar con la instalación?" || { echo "Instalación cancelada por el usuario."; exit 0; }
+confirm "Se van a instalar ${#PACKAGES[@]} paquetes (lista completa arriba, en la terminal).\n\n¿Continuar con la instalación?" || { warn "Instalación cancelada por el usuario."; exit 0; }
 
+log "Instalando paquetes..."
 sudo apt install -y "${PACKAGES[@]}"
+ok "Paquetes instalados."
 
 # ----------------------------------------------------------------------
 # 5. Flathub
 # ----------------------------------------------------------------------
 
 if ! flatpak remote-list | grep -q '^flathub'; then
-  echo "Añadiendo el remoto de Flathub..."
+  log "Añadiendo el remoto de Flathub..."
   flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+  ok "Remoto de Flathub añadido."
 else
-  echo "El remoto de Flathub ya está configurado."
+  ok "El remoto de Flathub ya está configurado."
 fi
 
 # ----------------------------------------------------------------------
@@ -297,91 +312,84 @@ TOTAL_RAM_KB="$(grep -m1 '^MemTotal:' /proc/meminfo | awk '{print $2}')"
 TOTAL_RAM_MB=$(( TOTAL_RAM_KB / 1024 ))
 ZRAM_SIZE_MB=$(( TOTAL_RAM_MB / 2 ))
 
-echo
 # Salvaguarda: si por lo que sea no se pudo leer /proc/meminfo o el
 # cálculo da 0, no se propone zram en vez de configurar un tamaño inválido.
 if [[ -z "$TOTAL_RAM_KB" || "$ZRAM_SIZE_MB" -le 0 ]]; then
-  echo "Aviso: no se ha podido determinar la RAM total del sistema; se omite la configuración de zram."
+  warn "No se ha podido determinar la RAM total del sistema; se omite la configuración de zram."
 else
-  echo "RAM total detectada: ${TOTAL_RAM_MB} MiB -> zram propuesto: ${ZRAM_SIZE_MB} MiB (mitad de la RAM)"
-  if confirm "¿Configurar zram (swap comprimido en RAM) con ${ZRAM_SIZE_MB} MiB?"; then
+  if confirm "RAM total detectada: ${TOTAL_RAM_MB} MiB\nzram propuesto: ${ZRAM_SIZE_MB} MiB (mitad de la RAM)\n\n¿Configurar zram (swap comprimido en RAM) con ${ZRAM_SIZE_MB} MiB?"; then
     if ! dpkg -s zram-tools >/dev/null 2>&1; then
-      echo "Instalando zram-tools..."
+      log "Instalando zram-tools..."
       sudo apt install -y zram-tools
     else
-      echo "zram-tools ya está instalado."
+      ok "zram-tools ya está instalado."
     fi
 
     ZRAM_CONF="/etc/default/zramswap"
 
-  if [[ -f "$ZRAM_CONF" ]]; then
-    # Copia de seguridad de la config previa, por si acaso.
-    ZRAM_BACKUP="${ZRAM_CONF}.bak.$(date +%Y%m%d%H%M%S)"
-    sudo cp "$ZRAM_CONF" "$ZRAM_BACKUP"
-    echo "Copia de seguridad de la configuración previa: $ZRAM_BACKUP"
+    if [[ -f "$ZRAM_CONF" ]]; then
+      # Copia de seguridad de la config previa, por si acaso.
+      ZRAM_BACKUP="${ZRAM_CONF}.bak.$(date +%Y%m%d%H%M%S)"
+      sudo cp "$ZRAM_CONF" "$ZRAM_BACKUP"
+      ok "Copia de seguridad de la configuración previa: $ZRAM_BACKUP"
 
-    # Distintas versiones de zram-tools llaman a la variable de tamaño
-    # fijo "SIZE" o "ALLOCATION" (ambas en MiB). Se detecta cuál usa la
-    # versión instalada en vez de asumir un nombre concreto.
-    if grep -q '^#\?SIZE=' "$ZRAM_CONF"; then
-      SIZE_VAR="SIZE"
-    elif grep -q '^#\?ALLOCATION=' "$ZRAM_CONF"; then
-      SIZE_VAR="ALLOCATION"
-    else
-      SIZE_VAR=""
-    fi
-
-    if [[ -n "$SIZE_VAR" ]]; then
-      # Comenta cualquier variable de porcentaje (PERCENT/PERCENTAGE):
-      # si queda activa, tiene prioridad sobre el tamaño fijo y lo ignora.
-      sudo sed -i -E 's/^#?(PERCENT|PERCENTAGE)=.*/#&/' "$ZRAM_CONF"
-
-      # Descomenta/fija la variable de tamaño detectada al valor calculado.
-      if grep -q "^${SIZE_VAR}=" "$ZRAM_CONF"; then
-        sudo sed -i "s/^${SIZE_VAR}=.*/${SIZE_VAR}=${ZRAM_SIZE_MB}/" "$ZRAM_CONF"
+      # Distintas versiones de zram-tools llaman a la variable de tamaño
+      # fijo "SIZE" o "ALLOCATION" (ambas en MiB). Se detecta cuál usa la
+      # versión instalada en vez de asumir un nombre concreto.
+      if grep -q '^#\?SIZE=' "$ZRAM_CONF"; then
+        SIZE_VAR="SIZE"
+      elif grep -q '^#\?ALLOCATION=' "$ZRAM_CONF"; then
+        SIZE_VAR="ALLOCATION"
       else
-        sudo sed -i "s/^#${SIZE_VAR}=.*/${SIZE_VAR}=${ZRAM_SIZE_MB}/" "$ZRAM_CONF"
+        SIZE_VAR=""
       fi
 
-      echo "Configurado ${SIZE_VAR}=${ZRAM_SIZE_MB} (${ZRAM_SIZE_MB} MiB) en $ZRAM_CONF"
-      sudo systemctl restart zramswap.service 2>/dev/null || sudo service zramswap restart
+      if [[ -n "$SIZE_VAR" ]]; then
+        # Comenta cualquier variable de porcentaje (PERCENT/PERCENTAGE):
+        # si queda activa, tiene prioridad sobre el tamaño fijo y lo ignora.
+        sudo sed -i -E 's/^#?(PERCENT|PERCENTAGE)=.*/#&/' "$ZRAM_CONF"
 
-      echo "Estado actual del zram:"
-      zramctl 2>/dev/null || true
-      swapon --show 2>/dev/null || true
+        # Descomenta/fija la variable de tamaño detectada al valor calculado.
+        if grep -q "^${SIZE_VAR}=" "$ZRAM_CONF"; then
+          sudo sed -i "s/^${SIZE_VAR}=.*/${SIZE_VAR}=${ZRAM_SIZE_MB}/" "$ZRAM_CONF"
+        else
+          sudo sed -i "s/^#${SIZE_VAR}=.*/${SIZE_VAR}=${ZRAM_SIZE_MB}/" "$ZRAM_CONF"
+        fi
 
-      # vm.swappiness=60 (valor por defecto) está pensado para swap en
-      # disco: el kernel espera a que la RAM esté casi llena antes de
-      # usarlo, porque mover datos a disco es lento. Con zram, el swap
-      # vive comprimido en RAM (mucho más rápido que un disco), así que
-      # conviene un swappiness más alto (rango habitual recomendado con
-      # zram: 130-180) para que el kernel mande antes las páginas frías
-      # al zram y deje más RAM libre real para caché y procesos activos.
-      SWAPPINESS_VALUE=130
-      SWAPPINESS_CONF="/etc/sysctl.d/99-zram-swappiness.conf"
+        ok "Configurado ${SIZE_VAR}=${ZRAM_SIZE_MB} (${ZRAM_SIZE_MB} MiB) en $ZRAM_CONF"
+        sudo systemctl restart zramswap.service 2>/dev/null || sudo service zramswap restart
 
-      if confirm "¿Ajustar vm.swappiness a ${SWAPPINESS_VALUE} (recomendado con zram, por defecto es 60 y está pensado para swap en disco)?"; then
-        echo "vm.swappiness=${SWAPPINESS_VALUE}" | sudo tee "$SWAPPINESS_CONF" >/dev/null
-        sudo sysctl -p "$SWAPPINESS_CONF" >/dev/null
-        echo "Configurado vm.swappiness=${SWAPPINESS_VALUE} de forma persistente en $SWAPPINESS_CONF"
-        echo "Valor activo confirmado: $(sudo sysctl -n vm.swappiness)"
+        log "Estado actual del zram:"
+        zramctl 2>/dev/null || true
+        swapon --show 2>/dev/null || true
+
+        # vm.swappiness=60 (valor por defecto) está pensado para swap en
+        # disco: el kernel espera a que la RAM esté casi llena antes de
+        # usarlo, porque mover datos a disco es lento. Con zram, el swap
+        # vive comprimido en RAM (mucho más rápido que un disco), así que
+        # conviene un swappiness más alto (rango habitual recomendado con
+        # zram: 130-180) para que el kernel mande antes las páginas frías
+        # al zram y deje más RAM libre real para caché y procesos activos.
+        SWAPPINESS_VALUE=130
+        SWAPPINESS_CONF="/etc/sysctl.d/99-zram-swappiness.conf"
+
+        if confirm "¿Ajustar vm.swappiness a ${SWAPPINESS_VALUE} (recomendado con zram, por defecto es 60 y está pensado para swap en disco)?"; then
+          echo "vm.swappiness=${SWAPPINESS_VALUE}" | sudo tee "$SWAPPINESS_CONF" >/dev/null
+          sudo sysctl -p "$SWAPPINESS_CONF" >/dev/null
+          ok "Configurado vm.swappiness=${SWAPPINESS_VALUE} de forma persistente en $SWAPPINESS_CONF"
+          ok "Valor activo confirmado: $(sudo sysctl -n vm.swappiness)"
+        else
+          warn "Se omite el ajuste de vm.swappiness (se queda en el valor actual del sistema)."
+        fi
       else
-        echo "Se omite el ajuste de vm.swappiness (se queda en el valor actual del sistema)."
+        warn "No se reconoció el formato de $ZRAM_CONF (puede que zram-tools use una versión con variables distintas a las esperadas). No se modificó el tamaño automáticamente para evitar dejar una configuración inconsistente; revísalo a mano: https://wiki.debian.org/ZRam"
       fi
     else
-      echo "Aviso: no se reconoció el formato de $ZRAM_CONF (puede que" \
-           "zram-tools use una versión con variables distintas a las" \
-           "esperadas). No se modificó el tamaño automáticamente para" \
-           "evitar dejar una configuración inconsistente; revísalo a mano:" \
-           "https://wiki.debian.org/ZRam"
+      warn "No se encontró $ZRAM_CONF tras instalar zram-tools. Revisa manualmente: https://wiki.debian.org/ZRam"
     fi
   else
-    echo "Aviso: no se encontró $ZRAM_CONF tras instalar zram-tools." \
-         "Revisa manualmente: https://wiki.debian.org/ZRam"
+    warn "Se omite la configuración de zram."
   fi
-else
-  echo "Se omite la configuración de zram."
-fi
 fi
 
 # ----------------------------------------------------------------------
@@ -406,7 +414,6 @@ fi
 #     confiar en ella; si no coincide, se aborta este paso sin tocar
 #     nada más (no se añade el repositorio ni se instala nada).
 
-echo
 if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositorio de Mozilla?"; then
 
   # 1. Quitar Firefox ESR (y su paquete de idioma español) si están instalados
@@ -417,15 +424,15 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
     fi
   done
   if [[ ${#FIREFOX_ESR_PKGS[@]} -gt 0 ]]; then
-    echo "Quitando Firefox ESR: ${FIREFOX_ESR_PKGS[*]}"
+    log "Quitando Firefox ESR: ${FIREFOX_ESR_PKGS[*]}"
     sudo apt remove -y "${FIREFOX_ESR_PKGS[@]}"
   else
-    echo "Firefox ESR no estaba instalado; se continúa igualmente."
+    warn "Firefox ESR no estaba instalado; se continúa igualmente."
   fi
 
   # gpg hace falta para verificar la clave; suele estar ya, pero por si acaso
   if ! command -v gpg >/dev/null 2>&1; then
-    echo "Instalando gnupg (necesario para verificar la clave de Mozilla)..."
+    log "Instalando gnupg (necesario para verificar la clave de Mozilla)..."
     sudo apt install -y gnupg
   fi
 
@@ -455,20 +462,19 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
     GNUPGHOME="$MOZILLA_GPG_TMPHOME" gpg -n -q --import --import-options import-show \
       /etc/apt/keyrings/packages.mozilla.org.asc \
       | awk '/pub/{getline; gsub(/^ +| +$/,""); print; exit}'
-  )"
+  ) || true"
 
   rm -rf "$MOZILLA_GPG_TMPHOME"
   trap - EXIT
 
   if [[ "$MOZILLA_ACTUAL_FPR" == "$MOZILLA_EXPECTED_FPR" ]]; then
-    echo "Huella digital de la clave de Mozilla verificada correctamente."
+    ok "Huella digital de la clave de Mozilla verificada correctamente."
     MOZILLA_KEY_OK=1
   else
-    echo "ERROR: la huella digital de la clave de Mozilla NO coincide." >&2
-    echo "  Esperada: $MOZILLA_EXPECTED_FPR" >&2
-    echo "  Obtenida: ${MOZILLA_ACTUAL_FPR:-<vacía>}" >&2
-    echo "Por seguridad, se aborta este paso: no se añade el repositorio" \
-         "ni se instala Firefox de Mozilla." >&2
+    warn "ERROR: la huella digital de la clave de Mozilla NO coincide."
+    warn "  Esperada: $MOZILLA_EXPECTED_FPR"
+    warn "  Obtenida: ${MOZILLA_ACTUAL_FPR:-<vacía>}"
+    warn "Por seguridad, se aborta este paso: no se añade el repositorio ni se instala Firefox de Mozilla."
     sudo rm -f /etc/apt/keyrings/packages.mozilla.org.asc
     MOZILLA_KEY_OK=0
   fi
@@ -481,7 +487,7 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
       MOZILLA_LIST="/etc/apt/sources.list.d/mozilla.list"
       echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
         | sudo tee "$MOZILLA_LIST" >/dev/null
-      echo "Repositorio de Mozilla escrito en $MOZILLA_LIST (formato clásico)."
+      ok "Repositorio de Mozilla escrito en $MOZILLA_LIST (formato clásico)."
     else
       MOZILLA_SOURCES="/etc/apt/sources.list.d/mozilla.sources"
       sudo tee "$MOZILLA_SOURCES" >/dev/null <<'EOF'
@@ -491,7 +497,7 @@ Suites: mozilla
 Components: main
 Signed-By: /etc/apt/keyrings/packages.mozilla.org.asc
 EOF
-      echo "Repositorio de Mozilla escrito en $MOZILLA_SOURCES (formato deb822)."
+      ok "Repositorio de Mozilla escrito en $MOZILLA_SOURCES (formato deb822)."
     fi
 
     # 5. Prioridad para que los paquetes de Mozilla no se vean
@@ -524,16 +530,14 @@ EOF
       if [[ -n "$FIREFOX_L10N_PKG" ]]; then
         sudo apt install -y "$FIREFOX_L10N_PKG"
       else
-        echo "Aviso: no se encontró ningún paquete de idioma español disponible" \
-             "(se probó: ${FIREFOX_L10N_CANDIDATES[*]}). Busca el nombre exacto con:" \
-             "apt-cache search firefox-l10n"
+        warn "No se encontró ningún paquete de idioma español disponible (se probó: ${FIREFOX_L10N_CANDIDATES[*]}). Busca el nombre exacto con: apt-cache search firefox-l10n"
       fi
     fi
 
-    echo "Firefox de Mozilla instalado. Comprueba la versión con: firefox --version"
+    ok "Firefox de Mozilla instalado. Comprueba la versión con: firefox --version"
   fi
 else
-  echo "Se omite la sustitución de Firefox."
+  warn "Se omite la sustitución de Firefox."
 fi
 
 # ----------------------------------------------------------------------
@@ -565,25 +569,15 @@ fi
 GPU_INFO="$(lspci | grep -Ei 'vga|3d' || true)"
 
 if echo "$GPU_INFO" | grep -qi nvidia; then
-  echo
-  echo "GPU NVIDIA detectada:"
-  echo "  $(echo "$GPU_INFO" | grep -i nvidia)"
-  echo
-  echo "Aviso: este paso instala 'nvidia-open', el módulo de kernel de código"
-  echo "abierto de NVIDIA. Solo soporta GPUs Turing en adelante (RTX 20xx,"
-  echo "GTX 16xx, RTX 30xx/40xx/50xx...). En una GPU más antigua (GTX 10xx"
-  echo "y anteriores: Pascal, Maxwell, etc.) este driver no cargará; en ese"
-  echo "caso necesitarías el paquete 'nvidia-driver' (el propietario clásico,"
-  echo "no open-source) en su lugar. El script no comprueba el modelo"
-  echo "concreto, solo que el fabricante sea NVIDIA."
+  NVIDIA_LINE="$(echo "$GPU_INFO" | grep -i nvidia)"
 
-  if confirm "¿Instalar el driver propietario de NVIDIA (nvidia-open, última versión disponible en el repo)?"; then
+  if confirm "GPU NVIDIA detectada:\n  ${NVIDIA_LINE}\n\nAviso: este paso instala 'nvidia-open', el módulo de kernel de código abierto de NVIDIA. Solo soporta GPUs Turing en adelante (RTX 20xx, GTX 16xx, RTX 30xx/40xx/50xx...). En una GPU más antigua (GTX 10xx y anteriores: Pascal, Maxwell, etc.) este driver no cargará; en ese caso necesitarías el paquete 'nvidia-driver' (el propietario clásico, no open-source) en su lugar. El script no comprueba el modelo concreto, solo que el fabricante sea NVIDIA.\n\n¿Instalar el driver propietario de NVIDIA (nvidia-open, última versión disponible en el repo)?" 22 76; then
 
     # Repo oficial de NVIDIA (cuda-keyring). Se comprueba si ya está
     # presente antes de descargar/instalar nada, para que volver a
     # ejecutar el script no lo repita innecesariamente.
     if ! dpkg -s cuda-keyring >/dev/null 2>&1; then
-      echo "Añadiendo el repositorio de NVIDIA (cuda-keyring)..."
+      log "Añadiendo el repositorio de NVIDIA (cuda-keyring)..."
       NVIDIA_KEYRING_TMP="$(mktemp --suffix=.deb)"
       wget -qO "$NVIDIA_KEYRING_TMP" \
         https://developer.download.nvidia.com/compute/cuda/repos/debian13/x86_64/cuda-keyring_1.1-1_all.deb
@@ -591,10 +585,10 @@ if echo "$GPU_INFO" | grep -qi nvidia; then
       rm -f "$NVIDIA_KEYRING_TMP"
       sudo apt update
     else
-      echo "El repositorio de NVIDIA (cuda-keyring) ya está instalado."
+      ok "El repositorio de NVIDIA (cuda-keyring) ya está instalado."
     fi
 
-    echo "Instalando el driver NVIDIA (sin pinear versión -> se resuelve la más reciente del repo)..."
+    log "Instalando el driver NVIDIA (sin pinear versión -> se resuelve la más reciente del repo)..."
     sudo apt install -y \
       linux-headers-amd64 \
       firmware-misc-nonfree \
@@ -607,16 +601,16 @@ if echo "$GPU_INFO" | grep -qi nvidia; then
       vulkan-tools \
       vulkan-validationlayers
 
-    echo "Deshabilitando el driver nouveau..."
+    log "Deshabilitando el driver nouveau..."
     sudo tee /etc/modprobe.d/blacklist-nouveau.conf >/dev/null <<'EOF'
 blacklist nouveau
 options nouveau modeset=0
 EOF
 
-    echo "Configurando GRUB para KMS de NVIDIA..."
+    log "Configurando GRUB para KMS de NVIDIA..."
     NVIDIA_GRUB_BACKUP="/etc/default/grub.bak.$(date +%Y%m%d%H%M%S)"
     sudo cp /etc/default/grub "$NVIDIA_GRUB_BACKUP"
-    echo "Copia de seguridad: $NVIDIA_GRUB_BACKUP"
+    ok "Copia de seguridad: $NVIDIA_GRUB_BACKUP"
 
     # En vez de sobrescribir GRUB_CMDLINE_LINUX_DEFAULT entero (lo que
     # borraría cualquier otro parámetro de arranque que ya tuvieras, p. ej.
@@ -639,12 +633,12 @@ EOF
     else
       echo "GRUB_CMDLINE_LINUX_DEFAULT=\"${NEW_CMDLINE}\"" | sudo tee -a /etc/default/grub >/dev/null
     fi
-    echo "GRUB_CMDLINE_LINUX_DEFAULT resultante: ${NEW_CMDLINE}"
+    ok "GRUB_CMDLINE_LINUX_DEFAULT resultante: ${NEW_CMDLINE}"
 
     sudo update-grub
     sudo update-initramfs -u
 
-    echo "Habilitando servicios de suspensión/hibernación de NVIDIA..."
+    log "Habilitando servicios de suspensión/hibernación de NVIDIA..."
     sudo systemctl enable nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service
 
     NVIDIA_INSTALLED=1
@@ -652,14 +646,13 @@ EOF
     # Aviso de Secure Boot: solo detecta y remite a MANUAL.md, nunca
     # ejecuta el enrollment de la clave MOK automáticamente.
     if command -v mokutil >/dev/null 2>&1 && mokutil --sb-state 2>/dev/null | grep -qi "enabled"; then
-      echo
-      echo "⚠ Secure Boot está ACTIVADO en este sistema."
-      echo "  El módulo del kernel de NVIDIA no cargará hasta que firmes la clave MOK."
-      echo "  Este paso es manual (requiere reiniciar y confirmar en el MOK Manager)."
-      echo "  Consulta la sección 'Secure Boot / NVIDIA' en MANUAL.md ANTES de reiniciar."
+      warn "Secure Boot está ACTIVADO en este sistema."
+      warn "El módulo del kernel de NVIDIA no cargará hasta que firmes la clave MOK."
+      warn "Este paso es manual (requiere reiniciar y confirmar en el MOK Manager)."
+      warn "Consulta la sección 'Secure Boot / NVIDIA' en MANUAL.md ANTES de reiniciar."
     fi
   else
-    echo "Se omite la instalación del driver NVIDIA."
+    warn "Se omite la instalación del driver NVIDIA."
   fi
 fi
 
@@ -679,29 +672,26 @@ fi
 GPU_COUNT="$(echo "$GPU_INFO" | grep -c . || true)"
 
 if [[ "$GPU_COUNT" -ge 2 ]]; then
-  echo
-  echo "Se han detectado $GPU_COUNT controladores de vídeo (GPU híbrida: integrada + dedicada):"
-  echo "$GPU_INFO" | sed 's/^/  /'
-  echo
-  if confirm "¿Instalar switcheroo-control para gestionar el cambio de GPU?"; then
+  GPU_LIST="$(echo "$GPU_INFO" | sed 's/^/  /')"
+  if confirm "Se han detectado $GPU_COUNT controladores de vídeo (GPU híbrida: integrada + dedicada):\n\n${GPU_LIST}\n\n¿Instalar switcheroo-control para gestionar el cambio de GPU?" 18 76; then
     if dpkg -s switcheroo-control >/dev/null 2>&1; then
-      echo "switcheroo-control ya está instalado."
+      ok "switcheroo-control ya está instalado."
     else
       sudo apt install -y switcheroo-control
     fi
     sudo systemctl enable --now switcheroo-control
-    echo "switcheroo-control instalado y activo. Comprueba las GPUs detectadas con: switcherooctl list"
+    ok "switcheroo-control instalado y activo. Comprueba las GPUs detectadas con: switcherooctl list"
     SWITCHEROO_INSTALLED=1
   else
-    echo "Se omite la instalación de switcheroo-control."
+    warn "Se omite la instalación de switcheroo-control."
   fi
 fi
 
 # ----------------------------------------------------------------------
-# 6. Notas finales
+# 6. Resumen final
 # ----------------------------------------------------------------------
 
-cat <<'EOF'
+cat <<EOF
 
 Instalación completada.
 
@@ -709,7 +699,7 @@ Notas:
   - fd-find se instala como binario "fdfind", no "fd" (conflicto de
     nombre en Debian). Si lo quieres como "fd":
       mkdir -p ~/.local/bin
-      ln -s "$(command -v fdfind)" ~/.local/bin/fd
+      ln -s "\$(command -v fdfind)" ~/.local/bin/fd
 
   - Puede que haga falta reiniciar sesión (o el sistema) para que
     algunos cambios de firmware/microcode surtan efecto.
@@ -768,4 +758,20 @@ if [[ "${SWITCHEROO_INSTALLED:-0}" -eq 1 ]]; then
       sudo systemctl disable --now switcheroo-control
       sudo apt remove switcheroo-control
 EOF
+fi
+
+echo "Detalles completos de cada paso en MANUAL.md."
+
+if [[ "$ASSUME_YES" -ne 1 ]]; then
+  if [[ "${NVIDIA_INSTALLED:-0}" -eq 1 ]]; then
+    if whiptail --title "$TITLE" \
+        --yes-button "Reiniciar ahora" --no-button "Reiniciar después" \
+        --yesno "Instalación completada.\n\nSe instaló el driver NVIDIA: hace falta reiniciar para que cargue.\n\n¿Reiniciar ahora?" 14 70; then
+      sudo reboot
+    else
+      ok "Recuerda reiniciar manualmente para que el driver NVIDIA entre en uso."
+    fi
+  else
+    whiptail --title "$TITLE" --msgbox "Instalación completada.\n\nRevisa el resumen impreso en la terminal para los detalles y próximos pasos." 12 70
+  fi
 fi
