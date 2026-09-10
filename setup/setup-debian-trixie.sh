@@ -5,8 +5,9 @@
 # Script de configuración inicial para Debian 13 (trixie) con KDE Plasma.
 # Configura los repositorios oficiales (deb822), actualiza el sistema,
 # instala un set de paquetes de desarrollo/multimedia/sistema, el
-# microcode correcto según el fabricante de CPU, y añade el remoto de
-# Flathub.
+# microcode correcto según el fabricante de CPU, añade el remoto de
+# Flathub, y ofrece (opcional, tras detectar el hardware) el driver
+# NVIDIA y switcheroo-control si hay GPU híbrida.
 #
 # Uso:
 #   chmod +x setup-debian-trixie.sh
@@ -663,6 +664,40 @@ EOF
 fi
 
 # ----------------------------------------------------------------------
+# 5e. switcheroo-control (gestión de GPU híbrida, opcional)
+# ----------------------------------------------------------------------
+#
+# switcheroo-control es el servicio D-Bus oficial de Debian (el mismo
+# enfoque por defecto de Fedora y CachyOS) para exponer la disponibilidad
+# de GPU dual (integrada + dedicada) y permitir el cambio entre ellas. No
+# es específico de ningún fabricante de portátil: solo tiene sentido si
+# hay de verdad dos GPUs, así que se detecta reutilizando $GPU_INFO (ya
+# calculado en la sección NVIDIA) contando cuántos controladores VGA/3D
+# reporta lspci -- 2 o más significa gráficos híbridos, sea la
+# combinación que sea (Intel+NVIDIA, AMD+NVIDIA, etc.).
+
+GPU_COUNT="$(echo "$GPU_INFO" | grep -c . || true)"
+
+if [[ "$GPU_COUNT" -ge 2 ]]; then
+  echo
+  echo "Se han detectado $GPU_COUNT controladores de vídeo (GPU híbrida: integrada + dedicada):"
+  echo "$GPU_INFO" | sed 's/^/  /'
+  echo
+  if confirm "¿Instalar switcheroo-control para gestionar el cambio de GPU?"; then
+    if dpkg -s switcheroo-control >/dev/null 2>&1; then
+      echo "switcheroo-control ya está instalado."
+    else
+      sudo apt install -y switcheroo-control
+    fi
+    sudo systemctl enable --now switcheroo-control
+    echo "switcheroo-control instalado y activo. Comprueba las GPUs detectadas con: switcherooctl list"
+    SWITCHEROO_INSTALLED=1
+  else
+    echo "Se omite la instalación de switcheroo-control."
+  fi
+fi
+
+# ----------------------------------------------------------------------
 # 6. Notas finales
 # ----------------------------------------------------------------------
 
@@ -721,5 +756,16 @@ if [[ "${NVIDIA_INSTALLED:-0}" -eq 1 ]]; then
     activado, no reinicies sin antes seguir la sección 'Secure Boot /
     NVIDIA' de MANUAL.md (enrollment de la clave MOK).
     Verifica tras reiniciar con: nvidia-smi
+EOF
+fi
+
+if [[ "${SWITCHEROO_INSTALLED:-0}" -eq 1 ]]; then
+  cat <<'EOF'
+
+  - switcheroo-control instalado y activo (gestión de GPU híbrida).
+    Comprueba las GPUs detectadas con: switcherooctl list
+    Para desactivarlo más adelante:
+      sudo systemctl disable --now switcheroo-control
+      sudo apt remove switcheroo-control
 EOF
 fi
