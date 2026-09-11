@@ -462,7 +462,7 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
     GNUPGHOME="$MOZILLA_GPG_TMPHOME" gpg -n -q --import --import-options import-show \
       /etc/apt/keyrings/packages.mozilla.org.asc \
       | awk '/pub/{getline; gsub(/^ +| +$/,""); print; exit}'
-  ) || true"
+  )" || true
 
   rm -rf "$MOZILLA_GPG_TMPHOME"
   trap - EXIT
@@ -639,7 +639,13 @@ EOF
     sudo update-initramfs -u
 
     log "Habilitando servicios de suspensión/hibernación de NVIDIA..."
-    sudo systemctl enable nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service
+    for svc in nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service; do
+      if sudo systemctl enable "$svc" 2>/dev/null; then
+        ok "Servicio habilitado: $svc"
+      else
+        warn "Servicio $svc no disponible en este empaquetado del driver, se omite."
+      fi
+    done
 
     NVIDIA_INSTALLED=1
 
