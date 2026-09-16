@@ -18,12 +18,25 @@
 #   ./setup-debian-trixie.sh          # modo interactivo (pide confirmación)
 #   ./setup-debian-trixie.sh -y       # modo no interactivo (asume "sí" en todo)
 #
+# Historial de versiones:
+#   1.1.0 - Sustitución de Firefox ESR reforzada (portado desde
+#           setup-debian-sid.sh): se usa "apt purge" en vez de "remove"
+#           (evita restos de config en estado "rc"), se limpia
+#           /etc/firefox-esr a mano (dpkg no lo borra si queda algo
+#           ajeno dentro), y se toma una foto de las carpetas de perfil
+#           existentes ANTES de tocar nada (en ese punto solo pueden
+#           ser de ESR, tengan o no "esr" en el nombre) para poder
+#           ofrecer, tras instalar Firefox release, migrar/eliminar el
+#           perfil antiguo y limpiar profiles.ini con la nueva función
+#           _cleanup_profiles_ini.
+#   1.0.0 - Versión base.
+#
 # Licencia: MIT
 
 set -euo pipefail
 
 TITLE="Configurador de Debian Trixie csr79a"
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 log()   { echo -e "\e[1;34m[*]\e[0m $*"; }
 ok()    { echo -e "\e[1;32m[OK]\e[0m $*"; }
@@ -66,6 +79,55 @@ confirm() {
     return 0
   fi
   whiptail --title "$TITLE" --yesno "$prompt" "$height" "$width"
+}
+
+# _cleanup_profiles_ini <ruta a profiles.ini> <nombre_carpeta1> [nombre_carpeta2 ...]
+#
+# Quita del profiles.ini de Firefox cualquier bloque [ProfileN] cuyo
+# "Path=" coincida con alguno de los nombres de carpeta pasados (solo
+# el nombre base, no la ruta completa). No toca [General] ni los
+# bloques [InstallXXXX] (el mecanismo moderno de Firefox para decidir
+# el perfil por defecto de cada instalación), que deben conservarse
+# intactos. Guarda una copia del archivo original en profiles.ini.bak
+# antes de tocarlo.
+_cleanup_profiles_ini() {
+  local ini_file="$1"; shift
+  local -a removed_names=("$@")
+  [[ -f "$ini_file" ]] || return 0
+  [[ ${#removed_names[@]} -gt 0 ]] || return 0
+
+  local pattern
+  pattern="$(printf '%s\n' "${removed_names[@]}" | paste -sd'|')"
+
+  cp -- "$ini_file" "${ini_file}.bak"
+
+  awk -v pat="$pattern" '
+    function flush() {
+      if (block != "") {
+        if (is_profile && matched) {
+          # bloque de perfil eliminado: se omite
+        } else {
+          printf "%s", block
+        }
+      }
+      block = ""; is_profile = 0; matched = 0
+    }
+    BEGIN { block = ""; is_profile = 0; matched = 0 }
+    /^\[/ {
+      flush()
+      is_profile = ($0 ~ /^\[Profile[0-9]+\]/)
+    }
+    {
+      block = block $0 "\n"
+      if (is_profile && $0 ~ ("^Path=(" pat ")$")) {
+        matched = 1
+      }
+    }
+    END { flush() }
+  ' "$ini_file" > "${ini_file}.tmp"
+
+  mv -- "${ini_file}.tmp" "$ini_file"
+  ok "profiles.ini actualizado (se eliminaron bloques de perfil obsoletos). Copia previa: ${ini_file}.bak"
 }
 
 # Con -y también evitamos que apt/debconf se queden esperando input
@@ -413,8 +475,32 @@ fi
 #   - Se verifica la huella digital de la clave de firma antes de
 #     confiar en ella; si no coincide, se aborta este paso sin tocar
 #     nada más (no se añade el repositorio ni se instala nada).
+#
+# NOTA sobre el borrado del perfil de ESR: no hay que confiar en que
+# el nombre de la carpeta contenga "esr". Firefox solo le agrega ese
+# sufijo al perfil cuando detecta más de una instalación compitiendo
+# por el perfil por defecto; si ESR fue la única instalación que
+# existió en este equipo, su carpeta puede llamarse simplemente
+# "xxxxxxxx.default", sin ningún "esr" en el nombre. Por eso acá se
+# toma una foto de TODAS las carpetas de perfil que ya existen antes
+# de instalar nada nuevo: en este punto del script, cualquier perfil
+# que exista solo puede pertenecer a ESR (el release todavía no está
+# instalado), así que no hace falta adivinar el nombre.
+
+MOZILLA_PROFILES_DIR="$HOME/.mozilla/firefox"
+MOZILLA_PROFILES_INI="$MOZILLA_PROFILES_DIR/profiles.ini"
 
 if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositorio de Mozilla?"; then
+
+  PRE_MIGRATION_PROFILE_DIRS=()
+  if [[ -d "$MOZILLA_PROFILES_DIR" ]]; then
+    while IFS= read -r -d '' dir; do
+      case "$(basename -- "$dir")" in
+        "Crash Reports"|"Pending Pings"|"Profile Groups") continue ;;
+      esac
+      PRE_MIGRATION_PROFILE_DIRS+=("$dir")
+    done < <(find "$MOZILLA_PROFILES_DIR" -mindepth 1 -maxdepth 1 -type d -print0 2>/dev/null)
+  fi
 
   # 1. Quitar Firefox ESR (y su paquete de idioma español) si están instalados
   FIREFOX_ESR_PKGS=()
@@ -425,9 +511,21 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
   done
   if [[ ${#FIREFOX_ESR_PKGS[@]} -gt 0 ]]; then
     log "Quitando Firefox ESR: ${FIREFOX_ESR_PKGS[*]}"
-    sudo apt remove -y "${FIREFOX_ESR_PKGS[@]}"
+    # "purge" en vez de "remove": si se usa "remove", dpkg deja el
+    # paquete en estado "rc" (removido, config sin purgar) y en una
+    # reejecución del script "dpkg -s" sigue fallando igual, pero
+    # /etc/firefox-esr queda con restos de config para siempre.
+    sudo apt purge -y "${FIREFOX_ESR_PKGS[@]}"
+    sudo apt autoremove -y
   else
-    warn "Firefox ESR no estaba instalado; se continúa igualmente."
+    warn "Firefox ESR no estaba instalado como paquete (o ya se había quitado antes). Se continúa igual para poder limpiar cualquier perfil huérfano que haya quedado de una ejecución anterior."
+  fi
+
+  if [[ -d /etc/firefox-esr ]]; then
+    # dpkg no borra el directorio si queda algo adentro que no le
+    # pertenece a ningún paquete (por ejemplo /etc/firefox-esr/pref/).
+    log "Quitando restos de configuración en /etc/firefox-esr"
+    sudo rm -rf /etc/firefox-esr
   fi
 
   # gpg hace falta para verificar la clave; suele estar ya, pero por si acaso
@@ -462,7 +560,7 @@ if confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositori
     GNUPGHOME="$MOZILLA_GPG_TMPHOME" gpg -n -q --import --import-options import-show \
       /etc/apt/keyrings/packages.mozilla.org.asc \
       | awk '/pub/{getline; gsub(/^ +| +$/,""); print; exit}'
-  ) || true"
+  )" || true
 
   rm -rf "$MOZILLA_GPG_TMPHOME"
   trap - EXIT
@@ -535,9 +633,32 @@ EOF
     fi
 
     ok "Firefox de Mozilla instalado. Comprueba la versión con: firefox --version"
+
+    if [[ ${#PRE_MIGRATION_PROFILE_DIRS[@]} -gt 0 ]]; then
+      PROFILE_LIST="$(printf '  - %s\n' "${PRE_MIGRATION_PROFILE_DIRS[@]}")"
+      if confirm "Se ha(n) detectado carpeta(s) de perfil de Firefox de antes de esta instalación (pertenecen a ESR, aunque no tengan \"esr\" en el nombre):\n\n${PROFILE_LIST}\n\nSi las dejas, herramientas como AutoFirma pueden seguir usando ese perfil antiguo como referencia en vez del perfil nuevo de Firefox release.\n\nAVISO: esto borra marcadores, contraseñas guardadas, historial y extensiones de ese perfil. Es irreversible.\n\n¿Eliminar también esa(s) carpeta(s)?" 20 78; then
+        REMOVED_PROFILE_NAMES=()
+        for dir in "${PRE_MIGRATION_PROFILE_DIRS[@]}"; do
+          rm -rf -- "$dir"
+          ok "Perfil antiguo eliminado: $dir"
+          REMOVED_PROFILE_NAMES+=("$(basename -- "$dir")")
+        done
+        _cleanup_profiles_ini "$MOZILLA_PROFILES_INI" "${REMOVED_PROFILE_NAMES[@]}"
+      else
+        warn "Se conserva(n) el/los perfil(es) antiguos."
+      fi
+    fi
   fi
 else
   warn "Se omite la sustitución de Firefox."
+
+  # Aunque no se elija sustituir Firefox en esta corrida, si quedaron
+  # carpetas de perfil huérfanas de una ejecución anterior (ESR ya
+  # desinstalado, pero perfil sin borrar) conviene avisarlo igual.
+  if [[ -d "$MOZILLA_PROFILES_DIR" ]] && ! dpkg -s firefox-esr >/dev/null 2>&1 \
+     && dpkg -s firefox >/dev/null 2>&1; then
+    warn "Firefox ESR no está instalado y Firefox release sí, pero no se comprobó si quedan perfiles huérfanos en $MOZILLA_PROFILES_DIR (se omitió por elección del usuario). Revisalo manualmente si AutoFirma u otra herramienta agarra el perfil equivocado."
+  fi
 fi
 
 # ----------------------------------------------------------------------
@@ -639,7 +760,13 @@ EOF
     sudo update-initramfs -u
 
     log "Habilitando servicios de suspensión/hibernación de NVIDIA..."
-    sudo systemctl enable nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service
+    for svc in nvidia-suspend.service nvidia-hibernate.service nvidia-resume.service; do
+      if sudo systemctl enable "$svc" 2>/dev/null; then
+        ok "Servicio habilitado: $svc"
+      else
+        warn "Servicio $svc no disponible en este empaquetado del driver, se omite."
+      fi
+    done
 
     NVIDIA_INSTALLED=1
 
