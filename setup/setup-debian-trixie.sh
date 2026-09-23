@@ -1145,6 +1145,36 @@ if [[ "$GPU_COUNT" -ge 2 ]]; then
         warn "No se pudo habilitar/arrancar switcheroo-control. Reintenta luego con: sudo systemctl enable --now switcheroo-control"
       fi
     fi
+
+    # --- Wrapper nvidia-run (variables de PRIME offload) ---
+    # Mismas variables que usa el paquete oficial "nvidia-prime" de
+    # Arch/CachyOS (prime-run) y que coinciden con el Environment: que
+    # reporta "switcherooctl list" para el dispositivo NVIDIA discreto.
+    # Deliberadamente NO se exportan de forma global (en /etc/environment
+    # o similar): eso forzaría la NVIDIA para todo el sistema y anularía
+    # el ahorro de batería del offloading selectivo.
+    if [[ "${NVIDIA_INSTALLED:-0}" -eq 1 ]]; then
+      if confirm "¿Crear el comando 'nvidia-run' para lanzar aplicaciones puntuales forzando la GPU NVIDIA (PRIME render offload)?\n\nEjemplo de uso: nvidia-run glxgears" 12 76; then
+        log "Creando wrapper nvidia-run en /usr/local/bin..."
+        sudo tee /usr/local/bin/nvidia-run >/dev/null <<'EOF'
+#!/usr/bin/env bash
+# nvidia-run — lanza un comando forzando el offload a la GPU NVIDIA
+# (PRIME render offload). Generado por setup-debian-trixie.sh.
+set -euo pipefail
+if [[ $# -eq 0 ]]; then
+  echo "Uso: nvidia-run <comando> [args...]" >&2
+  exit 1
+fi
+export __NV_PRIME_RENDER_OFFLOAD=1
+export __GLX_VENDOR_LIBRARY_NAME=nvidia
+export __VK_LAYER_NV_optimus=NVIDIA_only
+exec "$@"
+EOF
+        sudo chmod +x /usr/local/bin/nvidia-run
+        ok "nvidia-run creado. Prueba con: nvidia-run glxinfo | grep 'OpenGL renderer'"
+        NVIDIA_RUN_INSTALLED=1
+      fi
+    fi
   else
     warn "Se omite la instalación de switcheroo-control."
   fi
@@ -1245,6 +1275,16 @@ if [[ "${SWITCHEROO_INSTALLED:-0}" -eq 1 ]]; then
     Para desactivarlo más adelante:
       sudo systemctl disable --now switcheroo-control
       sudo apt remove switcheroo-control
+EOF
+fi
+
+if [[ "${NVIDIA_RUN_INSTALLED:-0}" -eq 1 ]]; then
+  cat <<'EOF'
+
+  - Comando 'nvidia-run' creado en /usr/local/bin. Úsalo para forzar
+    una app puntual a la GPU NVIDIA sin cambiar el comportamiento del
+    resto del sistema, p. ej.: nvidia-run glxgears
+    En Steam: nvidia-run %command% como parámetro de lanzamiento.
 EOF
 fi
 
