@@ -2,9 +2,9 @@
 
 Elimina aplicaciones de **KDE Plasma** que Debian 13 (trixie) instala por
 defecto junto a la tarea de escritorio, pero que muchos usuarios no llegan
-a usar (suite PIM/Kontact, algunas herramientas de accesibilidad,
-Konqueror). Es el complemento de `setup-debian-trixie.sh`: ese script
-instala, este quita.
+a usar (suite PIM/Kontact, herramientas de accesibilidad, Konqueror,
+xterm, KDE Connect, Dragon Player, Juk, KDE Partition Manager). Es el
+complemento de `setup-debian-trixie.sh`: ese script instala, este quita.
 
 ---
 
@@ -53,7 +53,7 @@ chmod +x cleanup-debian-trixie.sh
 # Modo interactivo (recomendado la primera vez): confirma cada grupo
 ./cleanup-debian-trixie.sh
 
-# Modo no interactivo: confirma automáticamente los grupos "seguros"
+# Modo no interactivo: sin pantallas, confirma TODOS los grupos
 ./cleanup-debian-trixie.sh -y
 
 # Igual que el anterior, pero borrando también los ficheros de configuración
@@ -65,6 +65,13 @@ chmod +x cleanup-debian-trixie.sh
 # Ayuda
 ./cleanup-debian-trixie.sh -h
 ```
+
+> **Ojo con `-y`:** no distingue grupos "seguros" de otros — confirma
+> **todos**, incluido KDE Partition Manager. Si usas `-y` y
+> `gnome-disk-utility` no está instalado por algún motivo, el aviso de
+> que te quedas sin gestor de particiones gráfico no llega a mostrarse
+> (las pantallas se saltan en modo no interactivo), así que el paquete se
+> elimina igual sin que lo veas.
 
 > Igual que en `setup-debian-trixie.sh`: no lo ejecutes con
 > `curl ... | bash` sin `-y`, porque las confirmaciones necesitan una
@@ -78,6 +85,10 @@ chmod +x cleanup-debian-trixie.sh
 | Accesibilidad | `kmousetool`, `kmouth`, `kontrast` | Independientes del grupo PIM: **no** se eliminan solos al quitar KMail, por eso van en grupo aparte. |
 | Konqueror | `konqueror` | Navegador/gestor de archivos histórico de KDE, sin relación con los otros grupos. |
 | xterm | `xterm` | Emulador de terminal genérico de X11, no es una app de Plasma ni depende de los grupos anteriores; va en su propio grupo. |
+| KDE Connect | `kdeconnect`, `kdeconnect-libs`, `qml6-module-org-kde-kdeconnect` | App, sus librerías internas y el módulo QML. Independiente del resto de grupos. |
+| Dragon Player | `dragonplayer` | Reproductor de vídeo por defecto de Plasma. Sin relación con los demás grupos. |
+| Juk | `juk` | Reproductor/gestor de música de KDE. Independiente de Dragon Player (paquetes distintos, sin dependencias cruzadas). |
+| KDE Partition Manager | `partitionmanager` | `setup-debian-trixie.sh` instala GNOME Disk Utility (`gnome-disk-utility`) como parte del set base de paquetes, así que normalmente ya tienes la alternativa gráfica lista. Aun así, si por lo que sea `gnome-disk-utility` no está instalado en tu sistema, el script te avisa explícitamente antes de confirmar: si sigues adelante, te quedas sin gestor de particiones gráfico. A diferencia de los demás grupos, este no usa la función genérica `remove_group()` — tiene su propia lógica (`remove_partitionmanager_group()`) para poder mostrar ese aviso condicional. |
 | ImageMagick (opcional, `--imagemagick`) | `imagemagick` | Ver aviso abajo. |
 
 Los nombres de paquete están verificados contra el repositorio de Debian

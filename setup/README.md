@@ -3,7 +3,8 @@
 Script de configuración inicial para **Debian 13 (trixie)** con KDE Plasma.
 Automatiza la configuración de repositorios, la actualización del sistema,
 la instalación de un set de paquetes de desarrollo/multimedia/sistema
-(incluyendo Synaptic y GDebi como gestores de paquetes gráficos), el
+(incluyendo Synaptic como gestor de paquetes gráfico y GNOME Disk Utility
+para discos/particiones), fuentes de Windows y de Ubuntu (opcional), el
 microcode correcto según el fabricante de CPU, un dispositivo zram de swap
 comprimido en RAM con tamaño calculado automáticamente según la RAM total
 (opcional), la sustitución de Firefox ESR por el
@@ -47,20 +48,23 @@ El script ejecuta, en orden, los siguientes pasos:
 5. Ejecuta `apt update` y, opcionalmente, `apt full-upgrade`.
 6. Detecta el fabricante de la CPU (`Intel`/`AMD`) para instalar el paquete
    de microcode correspondiente.
-7. Instala un conjunto de paquetes, incluyendo Synaptic y GDebi (ver
-   [tabla completa](#qué-se-instala)).
-8. Añade el remoto de **Flathub** si no está ya configurado.
-9. Pregunta si quieres configurar un dispositivo **zram** (swap comprimido
-   en RAM, tamaño calculado automáticamente según la RAM total), y de ser
-   así, si quieres ajustar también `vm.swappiness` a un valor recomendado
-   para zram (ver [sección dedicada](#zram-swap-comprimido-en-ram-tamaño-automático)).
-10. Pregunta si quieres sustituir Firefox ESR por el **Firefox oficial de
+7. Instala un conjunto de paquetes, incluyendo Synaptic y GNOME Disk
+   Utility (ver [tabla completa](#qué-se-instala)).
+8. Pregunta si quieres instalar las fuentes de **Windows**
+   (`ttf-mscorefonts-installer`, acepta la EULA automáticamente) y de
+   **Ubuntu** (`fonts-ubuntu`).
+9. Añade el remoto de **Flathub** si no está ya configurado.
+10. Pregunta si quieres configurar un dispositivo **zram** (swap comprimido
+    en RAM, tamaño calculado automáticamente según la RAM total), y de ser
+    así, si quieres ajustar también `vm.swappiness` a un valor recomendado
+    para zram (ver [sección dedicada](#zram-swap-comprimido-en-ram-tamaño-automático)).
+11. Pregunta si quieres sustituir Firefox ESR por el **Firefox oficial de
     Mozilla** (ver [sección dedicada](#firefox-oficial-de-mozilla)).
-11. Si detecta una GPU **NVIDIA** por `lspci`, pregunta si quieres instalar
+12. Si detecta una GPU **NVIDIA** por `lspci`, pregunta si quieres instalar
     el driver propietario (`nvidia-open`), avisando antes de la limitación
     de compatibilidad (ver [sección dedicada](#driver-nvidia)).
-12. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic/GDebi, zram, Firefox,
-    NVIDIA y el sources.list clásico neutralizado).
+13. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic, fuentes, zram,
+    Firefox, NVIDIA y el sources.list clásico neutralizado).
 
 ---
 
@@ -206,8 +210,10 @@ ahí, verás un mensaje claro señalando este README en vez de un error de
 | Desarrollo / compilación | `build-essential`, `gcc`, `g++`, `make`, `cmake`, `ninja-build`, `pkg-config`, `autoconf`, `automake`, `libtool`, `openssh-client` |
 | Multimedia | `ffmpeg`, `gstreamer1.0-libav`, `gstreamer1.0-plugins-good/bad/ugly`, `pavucontrol` |
 | Firmware | `firmware-linux` (metapaquete, ver nota abajo) |
-| Gestión de paquetes (GUI) | `synaptic`, `gdebi` |
+| Gestión de paquetes (GUI) | `synaptic` |
+| Utilidades de disco | `gnome-disk-utility` |
 | Flatpak / KDE | `flatpak`, `plasma-discover-backend-flatpak` |
+| Fuentes (opcional, con confirmación aparte) | `ttf-mscorefonts-installer` (fuentes de Windows, acepta la EULA con `-y`), `fonts-ubuntu` |
 | Microcode | `intel-microcode` o `amd64-microcode`, según CPU detectada |
 | ZRAM (opcional, con confirmación aparte) | `zram-tools`, tamaño calculado automáticamente (mitad de la RAM total) |
 | NVIDIA (opcional, solo si se detecta GPU NVIDIA) | `nvidia-open`, `nvidia-kernel-open-dkms`, `nvidia-settings`, `dkms`, `linux-headers-amd64`, `firmware-misc-nonfree`, paquetes de Vulkan |
@@ -458,19 +464,29 @@ ln -s "$(command -v fdfind)" ~/.local/bin/fd
 
 Asegúrate de que `~/.local/bin` esté en tu `$PATH`.
 
-### Synaptic y GDebi
+### Synaptic y GNOME Disk Utility
 
 - **Synaptic**: gestor de paquetes gráfico completo — buscar, instalar,
   quitar, fijar versiones, ver dependencias. Se abre desde el menú de
   aplicaciones o con `synaptic-pkexec` en terminal (te pide la
   autenticación con `polkit`, no hace falta anteponer `sudo`).
-- **GDebi**: instala archivos `.deb` sueltos (por ejemplo, descargados de
-  la web) resolviendo automáticamente sus dependencias, algo que abrir el
-  archivo con doble clic no siempre hace bien. Uso:
-  ```bash
-  sudo gdebi ruta/al/archivo.deb
-  ```
-  o desde su interfaz gráfica, abriendo el `.deb` con GDebi.
+- **GNOME Disk Utility** (`gnome-disk-utility`): gestor gráfico de discos y
+  particiones (formatear, crear/borrar particiones, comprobar SMART,
+  montar imágenes). Se abre desde el menú de aplicaciones (`gnome-disks`).
+  Es también la alternativa gráfica que `cleanup-debian-trixie.sh` da por
+  ya instalada al ofrecer quitar KDE Partition Manager.
+
+### Fuentes de Windows y de Ubuntu
+
+Paso opcional, con su propia pregunta de confirmación:
+
+- **`ttf-mscorefonts-installer`**: instala las fuentes típicas de Windows
+  (Arial, Times New Roman, Calibri, etc.), necesarias para que documentos
+  creados en Windows/Office se vean con el tipo de letra correcto. El
+  script acepta la licencia (EULA) de Microsoft automáticamente vía
+  `debconf-set-selections`, ya que es un paso puramente mecánico de
+  aceptación, no de configuración.
+- **`fonts-ubuntu`**: la familia tipográfica oficial de Ubuntu.
 
 ### `apt full-upgrade`
 

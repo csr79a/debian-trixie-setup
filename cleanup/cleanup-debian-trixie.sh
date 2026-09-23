@@ -21,12 +21,46 @@
 #   ./cleanup-debian-trixie.sh --purge       # como el anterior pero borrando también configuración
 #   ./cleanup-debian-trixie.sh --imagemagick # además, evalúa quitar ImageMagick (ver aviso abajo)
 #
+# Historial de versiones:
+#   1.1.0 - Hardening portado desde cleanup-debian-sid.sh:
+#           * is_installed() ahora distingue el estado real "install ok
+#             installed" de un estado "rc" (eliminado con "apt remove"
+#             pero con config residual, típico si ya se corrió este
+#             script antes sin --purge); antes, "dpkg -s" devolvía
+#             éxito también en estado "rc" y se volvía a ofrecer
+#             eliminar algo que ya no estaba instalado.
+#           * remove_group(), el bloque de ImageMagick y el
+#             autoremove/autoclean final ahora envuelven cada
+#             "apt remove/purge/autoremove/autoclean" en un if/else.
+#             Con "set -e" activo, si el usuario respondía "no" a la
+#             propia pregunta [Y/n] de apt (o si apt fallaba por
+#             cualquier otro motivo), el comando devolvía un código
+#             distinto de 0 y eso mataba TODO el script ahí mismo, sin
+#             procesar el resto de los grupos ni el resumen final. Un
+#             "no" o un fallo de apt ahora se trata como "se omite este
+#             paso", igual que un "no" de whiptail.
+#           * Añadidos los grupos "Dragon Player" y "Juk" (reproductores
+#             multimedia de KDE que muchos usuarios sustituyen por otros).
+#           * Añadido el grupo "KDE Partition Manager", con su propia
+#             función (no usa el remove_group() genérico): avisa si
+#             gnome-disk-utility no está instalado, porque en ese caso
+#             eliminar KDE Partition Manager dejaría el sistema sin
+#             gestor de particiones gráfico.
+#   1.0.0 - Versión base.
+#
+# Nota: desde la versión 1.3.0 de setup-debian-trixie.sh, ese script
+# instala gnome-disk-utility (grupo "Utilidades de disco"), igual que
+# setup-debian-sid.sh. El aviso de gnome-disk-utility en el grupo "KDE
+# Partition Manager" de aquí abajo solo se dispara si, pese a eso, no lo
+# tienes instalado (lo quitaste a mano, instalación antigua con una
+# versión anterior del setup, etc.).
+#
 # Licencia: MIT
 
 set -euo pipefail
 
 TITLE="Limpiador de Debian Trixie csr79a"
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 log()   { echo -e "\e[1;34m[*]\e[0m $*"; }
 ok()    { echo -e "\e[1;32m[OK]\e[0m $*"; }
@@ -127,7 +161,7 @@ fi
 
 WELCOME_MSG="Versión del Limpiador de Debian Trixie csr79a ${VERSION}
 
-Este programa revisa, grupo por grupo, aplicaciones de KDE Plasma instaladas por defecto en Debian que muchos usuarios no llegan a usar (suite PIM/Kontact, accesibilidad, Konqueror, xterm, KDE Connect).
+Este programa revisa, grupo por grupo, aplicaciones de KDE Plasma instaladas por defecto en Debian que muchos usuarios no llegan a usar (suite PIM/Kontact, accesibilidad, Konqueror, xterm, KDE Connect, Dragon Player, Juk, KDE Partition Manager, e ImageMagick de forma opcional).
 
 No se eliminará nada sin confirmación explícita de cada grupo."
 
@@ -139,7 +173,7 @@ fi
 
 confirm "$WELCOME_MSG
 
-¿Desea continuar?" 20 74 || exit 0
+¿Desea continuar?" 22 74 || exit 0
 
 DETECTED_CODENAME=""
 if [[ -r /etc/os-release ]]; then
@@ -155,7 +189,14 @@ fi
 # ----------------------------------------------------------------------
 
 is_installed() {
-  dpkg -s "$1" >/dev/null 2>&1
+  # dpkg -s también devuelve éxito para paquetes en estado "rc"
+  # (eliminados con "apt remove" pero con config residual, algo típico
+  # si ya corriste este script antes sin --purge). Comprobamos el
+  # estado real ("install ok installed") para no volver a ofrecer
+  # eliminar algo que ya no está instalado.
+  local status
+  status="$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" || return 1
+  [[ "$status" == "install ok installed" ]]
 }
 
 # remove_group <nombre> <descripcion_paquetes> <pkg1> [pkg2 ...]
@@ -189,12 +230,29 @@ remove_group() {
   fi
 
   # Sin -y aquí: dejamos que apt muestre su propio resumen (incluyendo
-  # cualquier dependencia que se lleve por delante) y pida confirmación,
-  # salvo que el usuario haya pedido explícitamente modo no interactivo.
+  # cualquier dependencia que se lleve por delante) en la terminal
+  # normal, salvo que el usuario haya pedido explícitamente modo no
+  # interactivo.
+  #
+  # IMPORTANTE: esto va dentro de un if/else a propósito. Con "set -e"
+  # activo, si el usuario contesta "n" en la pregunta [Y/n] de apt (o
+  # si apt falla por cualquier otro motivo), el comando devuelve un
+  # código distinto de 0 -- y sin este if, eso mataría TODO el script
+  # ahí mismo, dejando sin procesar el resto de los grupos, el
+  # autoremove/autoclean final y el resumen. Tratamos un "no" de apt
+  # como "se omite este grupo", igual que un "no" de whiptail.
   if [[ "$ASSUME_YES" -eq 1 ]]; then
-    sudo apt "$APT_ACTION" -y "${to_remove[@]}"
+    if sudo apt "$APT_ACTION" -y "${to_remove[@]}"; then
+      ok "Grupo '${group_name}' procesado."
+    else
+      warn "Grupo '${group_name}': falló 'apt ${APT_ACTION}'. Se omite y se continúa con el resto."
+    fi
   else
-    sudo apt "$APT_ACTION" "${to_remove[@]}"
+    if sudo apt "$APT_ACTION" "${to_remove[@]}"; then
+      ok "Grupo '${group_name}' procesado."
+    else
+      warn "Grupo '${group_name}': cancelado o falló 'apt ${APT_ACTION}'. Se continúa con el resto."
+    fi
   fi
 }
 
@@ -259,6 +317,66 @@ KDECONNECT_GROUP=(
 )
 KDECONNECT_DESC="KDE Connect (app), sus librerías internas (kdeconnect-libs) y el módulo QML (qml6-module-org-kde-kdeconnect). Independiente del resto de grupos."
 
+# GRUPO 3d — Dragon Player
+# Reproductor de vídeo por defecto de Plasma. Sin relación de
+# dependencias con el resto de grupos.
+DRAGONPLAYER_GROUP=(
+  dragonplayer
+)
+DRAGONPLAYER_DESC="Reproductor de vídeo por defecto de Plasma."
+
+# GRUPO 3e — Juk
+# Reproductor/gestor de música de KDE. Independiente de Dragon Player
+# (paquetes distintos, sin dependencias cruzadas).
+JUK_GROUP=(
+  juk
+)
+JUK_DESC="Reproductor/gestor de música de KDE."
+
+# GRUPO 3f — KDE Partition Manager
+# A diferencia de los demás grupos, este no usa remove_group() genérico:
+# comprueba explícitamente si gnome-disk-utility está instalado para
+# avisar si no habría alternativa gráfica de gestión de discos/
+# particiones tras la eliminación. setup-debian-trixie.sh NO instala
+# gnome-disk-utility por defecto, así que este aviso es puramente
+# informativo aquí (a diferencia de la versión de setup-debian-sid.sh,
+# no asume que ya tengas una alternativa instalada por el script de
+# setup complementario).
+remove_partitionmanager_group() {
+  log "Grupo: KDE Partition Manager"
+  if ! is_installed partitionmanager; then
+    ok "Nada que hacer (partitionmanager no está instalado)."
+    return
+  fi
+
+  local warning_text=""
+  if ! is_installed gnome-disk-utility; then
+    warning_text="\n\nAVISO: gnome-disk-utility NO está instalado en este sistema. Si eliminas KDE Partition Manager, te quedarás sin gestor de particiones gráfico salvo que instales uno (p. ej.: sudo apt install gnome-disk-utility)."
+  fi
+
+  if ! confirm "Instalado: partitionmanager${warning_text}\n\n¿Eliminar este grupo con 'apt ${APT_ACTION}'?" 18 78; then
+    warn "Grupo omitido."
+    return
+  fi
+
+  # Ver el comentario equivalente en remove_group(): sin el if/else acá,
+  # un "no" en la pregunta de apt (o un fallo) cortaría todo el script
+  # por "set -e" y no llegaría a procesar ImageMagick, autoremove, etc.
+  if [[ "$ASSUME_YES" -eq 1 ]]; then
+    if sudo apt "$APT_ACTION" -y partitionmanager; then
+      ok "Grupo 'KDE Partition Manager' procesado."
+    else
+      warn "Grupo 'KDE Partition Manager': falló 'apt ${APT_ACTION}'. Se omite y se continúa."
+    fi
+  else
+    if sudo apt "$APT_ACTION" partitionmanager; then
+      ok "Grupo 'KDE Partition Manager' procesado."
+    else
+      warn "Grupo 'KDE Partition Manager': cancelado o falló 'apt ${APT_ACTION}'. Se continúa."
+    fi
+  fi
+}
+
 # GRUPO 4 (opcional, --imagemagick) — ImageMagick
 # ¡OJO! No es una app de Plasma: es una utilidad/librería que usan otros
 # programas por debajo (miniaturas, importación/exportación de imágenes
@@ -276,6 +394,9 @@ remove_group "Accesibilidad" "$ACCESSIBILITY_DESC" "${ACCESSIBILITY_GROUP[@]}"
 remove_group "Konqueror" "$KONQUEROR_DESC" "${KONQUEROR_GROUP[@]}"
 remove_group "xterm" "$XTERM_DESC" "${XTERM_GROUP[@]}"
 remove_group "KDE Connect" "$KDECONNECT_DESC" "${KDECONNECT_GROUP[@]}"
+remove_group "Dragon Player" "$DRAGONPLAYER_DESC" "${DRAGONPLAYER_GROUP[@]}"
+remove_group "Juk" "$JUK_DESC" "${JUK_GROUP[@]}"
+remove_partitionmanager_group
 
 if [[ "$INCLUDE_IMAGEMAGICK" -eq 1 ]]; then
   log "Grupo opcional: ImageMagick"
@@ -284,10 +405,20 @@ if [[ "$INCLUDE_IMAGEMAGICK" -eq 1 ]]; then
     warn "ImageMagick no es una app de Plasma: puede que otros programas lo usen por debajo."
     echo "$RDEPENDS"
     if confirm "ImageMagick no es una app de Plasma: puede que otros programas lo usen por debajo (miniaturas, importación/exportación de imágenes).\n\nPaquetes que dependen de él (primeras líneas, lista completa arriba en la terminal):\n\n$(echo "$RDEPENDS" | head -n 8)\n\n¿Aun así quieres eliminarlo?" 20 76; then
+      # Mismo motivo que en remove_group(): if/else para que un "no" o
+      # un fallo de apt no corte el script antes del autoremove/autoclean.
       if [[ "$ASSUME_YES" -eq 1 ]]; then
-        sudo apt "$APT_ACTION" -y imagemagick
+        if sudo apt "$APT_ACTION" -y imagemagick; then
+          ok "ImageMagick eliminado."
+        else
+          warn "Falló 'apt ${APT_ACTION} imagemagick'. Se omite y se continúa."
+        fi
       else
-        sudo apt "$APT_ACTION" imagemagick
+        if sudo apt "$APT_ACTION" imagemagick; then
+          ok "ImageMagick eliminado."
+        else
+          warn "Cancelado o falló 'apt ${APT_ACTION} imagemagick'. Se continúa."
+        fi
       fi
     else
       warn "Se omite ImageMagick."
@@ -298,11 +429,19 @@ if [[ "$INCLUDE_IMAGEMAGICK" -eq 1 ]]; then
 fi
 
 if confirm "¿Ejecutar 'apt autoremove' para limpiar dependencias huérfanas?"; then
-  sudo apt autoremove
+  if sudo apt autoremove; then
+    ok "autoremove completado."
+  else
+    warn "Cancelado o falló 'apt autoremove'. Se continúa igualmente."
+  fi
 fi
 
 if confirm "¿Ejecutar 'apt autoclean' para limpiar el caché de paquetes .deb descargados que ya no están disponibles?"; then
-  sudo apt autoclean
+  if sudo apt autoclean; then
+    ok "autoclean completado."
+  else
+    warn "Cancelado o falló 'apt autoclean'. Se continúa igualmente."
+  fi
 fi
 
 cat <<'EOF'
@@ -315,9 +454,18 @@ Notas:
     quieres borrarlos también, vuelve a ejecutar con --purge.
   - Si más adelante echas en falta alguna app, se reinstala igual que
     cualquier otro paquete: sudo apt install <paquete>.
+  - Si quitaste KDE Partition Manager y necesitas gestionar discos o
+    particiones, instala una alternativa gráfica (p. ej.:
+    sudo apt install gnome-disk-utility) o usa la terminal (parted,
+    fdisk, gparted).
   - Este script es intencionadamente conservador: pide confirmación por
     grupo y dentro de cada "apt remove/purge" verás el resumen real de
     la transacción antes de que se aplique (salvo en modo -y).
+  - En Debian trixie (stable) es poco probable que estos paquetes
+    reaparezcan solos, ya que la rama estable no reintroduce
+    dependencias nuevas fuera de las actualizaciones de seguridad y los
+    "point releases". Si tras una actualización de este tipo vuelve a
+    aparecer alguno, ejecuta de nuevo este script.
 EOF
 
 if [[ "$ASSUME_YES" -ne 1 ]]; then
