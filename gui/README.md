@@ -4,9 +4,10 @@ El directorio `gui/` contiene el lanzador gráfico del proyecto.
 
 ## Qué hace
 
-El GUI es un **orquestador**, no duplica la lógica de los instaladores:
+El GUI es un **orquestador**, no duplica la lógica de los instaladores. Los componentes locales son Sistema Trixie, Gaming y Limpieza; NVIDIA y ASUS ROG siguen siendo proyectos externos:
 
 - **Sistema Trixie** → `setup/setup-debian-trixie.sh`
+- **Gaming** → `gaming/setup-gaming-debian-trixie.sh`
 - **Limpieza** → `cleanup/cleanup-debian-trixie.sh`
 - **NVIDIA** → `csr79a/nvidia-debian-setup`
 - **ASUS ROG** → `csr79a/asusctl-rogcontrol-debian`
