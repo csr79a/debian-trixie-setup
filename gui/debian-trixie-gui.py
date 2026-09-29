@@ -41,7 +41,7 @@ class TrixieGUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Debian Trixie Setup")
-        self.geometry("900x620")
+        self.geometry("1100x620")
         self.minsize(760, 520)
 
         style = ttk.Style(self)
@@ -77,16 +77,22 @@ class TrixieGUI(tk.Tk):
         )
         self._card(
             cards, 1, "Limpieza",
+
             "Limpia aplicaciones KDE seleccionadas mediante el script independiente.",
             lambda: self.run_terminal(ROOT / "cleanup" / "cleanup-debian-trixie.sh"),
         )
         self._card(
-            cards, 2, "NVIDIA",
+            cards, 2, "Gaming",
+            "Steam/Proton, GameMode, MangoHud, Protontricks, Heroic, Lutris y Gamescope.",
+            lambda: self.run_terminal(ROOT / "gaming" / "setup-gaming-debian-trixie.sh"),
+        )
+        self._card(
+            cards, 3, "NVIDIA",
             PROJECTS["nvidia"]["description"],
             lambda: self.external("nvidia"),
         )
         self._card(
-            cards, 3, "ASUS ROG",
+            cards, 4, "ASUS ROG",
             PROJECTS["asus"]["description"],
             lambda: self.external("asus"),
         )
