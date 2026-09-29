@@ -60,6 +60,7 @@ class TrixieGUI(Gtk.Window):
         self.status = Gtk.Label(label="Listo.")
         self.status.set_xalign(0)
         self.sudo_authenticated = False
+        self.pending_action = None
         self.sudo_timer_id = GLib.timeout_add_seconds(60, self._refresh_sudo)
 
         self._build()
@@ -218,8 +219,12 @@ class TrixieGUI(Gtk.Window):
 
         if result.returncode == 0:
             self.sudo_authenticated = True
-            self.status.set_text("Sudo autenticado. Ya puedes ejecutar los instaladores.")
+            self.status.set_text("Sudo autenticado. Ejecutando la acción solicitada…")
             self._write("\n[OK] Autenticación sudo correcta.\n")
+            action = self.pending_action
+            self.pending_action = None
+            if action is not None:
+                GLib.idle_add(action)
         else:
             self.sudo_authenticated = False
             self.status.set_text("Contraseña de sudo incorrecta o sudo rechazó la autenticación.")
@@ -245,7 +250,7 @@ class TrixieGUI(Gtk.Window):
             self.status.set_text("La autenticación sudo ha expirado. Vuelve a autenticarte.")
         return True
 
-    def _ensure_sudo(self) -> bool:
+    def _ensure_sudo(self, action=None) -> bool:
         if self.sudo_authenticated:
             result = subprocess.run(
                 ["sudo", "-n", "-v"],
@@ -258,6 +263,7 @@ class TrixieGUI(Gtk.Window):
                 return True
 
         self.sudo_authenticated = False
+        self.pending_action = action
         self.status.set_text("Introduce la contraseña de sudo y pulsa «Autenticar».")
         self.password_entry.grab_focus()
         return False
@@ -292,7 +298,7 @@ class TrixieGUI(Gtk.Window):
             self.status.set_text(f"El proceso terminó con código {status}.")
 
     def run_script(self, script: Path) -> None:
-        if not self._ensure_sudo():
+        if not self._ensure_sudo(lambda: self.run_script(script)):
             return
 
         if not script.is_file():
@@ -305,7 +311,7 @@ class TrixieGUI(Gtk.Window):
         self._spawn(f"exec bash {shlex.quote(script.name)}", script.parent)
 
     def external(self, key: str) -> None:
-        if not self._ensure_sudo():
+        if not self._ensure_sudo(lambda: self.external(key)):
             return
 
         if not shutil.which("git"):
