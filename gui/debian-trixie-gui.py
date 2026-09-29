@@ -52,6 +52,7 @@ class TrixieGUI(Gtk.Window):
         self.connect("destroy", Gtk.main_quit)
 
         self.terminal = Vte.Terminal()
+        self.terminal.connect("child-exited", self._child_exited)
         self.terminal.set_scrollback_lines(10000)
         self.terminal.set_hexpand(True)
         self.terminal.set_vexpand(True)
@@ -178,9 +179,13 @@ class TrixieGUI(Gtk.Window):
             None,
             -1,
             None,
-            self._child_exited,
+            self._spawn_finished,
             None,
         )
+
+    def _spawn_finished(self, _terminal, _pid, error, _user_data) -> None:
+        if error is not None:
+            self.status.set_text(f"No se pudo iniciar el proceso: {error}")
 
     def _child_exited(self, _terminal, status: int, _user_data) -> None:
         if status == 0:
