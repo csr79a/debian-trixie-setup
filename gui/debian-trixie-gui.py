@@ -639,6 +639,19 @@ class Launcher(QWidget):
             QMessageBox.critical(self, "Sin terminal",
                                  "No se encontró konsole ni x-terminal-emulator.")
             return False
+
+        if item.get("local"):
+            script = ROOT / item["script"]
+            comando = (
+                f"bash {str(script)!r}; rc=$?; "
+                'echo; echo "El script terminó con código $rc."; '
+                'echo; read -rp "Pulsa Enter para cerrar..." _'
+            )
+            subprocess.Popen(
+                [terminal, "-e", "bash", "-c", comando],
+                start_new_session=True)
+            return True
+
         dest = self.base / repo_name(item["repo"])
         subprocess.Popen(
             [terminal, "-e", "bash", "-c", BASH_RUNNER, "_",
