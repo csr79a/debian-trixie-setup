@@ -152,8 +152,7 @@ class TrixieGUI(tk.Tk):
             return
 
         command = f"cd {shlex.quote(str(script.parent))} && bash {shlex.quote(script.name)}"
-        self.write(f"Ejecutando: {script}
-")
+        self.write(f"Ejecutando: {script}\n")
         self.status.set(f"Ejecutando {script.name}…")
         try:
             subprocess.Popen([term, "-e", "bash", "-lc", command])
