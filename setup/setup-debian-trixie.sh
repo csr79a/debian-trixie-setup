@@ -21,6 +21,13 @@
 #                                      # incluidas operaciones destructivas; ver --help)
 #
 # Historial de versiones:
+#   1.4.0 - Separa el hardware externo del setup base:
+#           * NVIDIA deja de instalarse desde este script y pasa a
+#             csr79a/nvidia-debian-setup.
+#           * ASUS/asusctl se mantiene como componente externo, lanzado
+#             desde el GUI del proyecto.
+#           * Se conserva Firefox oficial de Mozilla con verificación de
+#             huella y sustitución segura de ESR.
 #   1.3.0 - Paridad con setup-debian-sid.sh en dos decisiones que se habían
 #           dejado pendientes en la 1.2.0:
 #           * Se quita "gdebi" del grupo "Gestión de paquetes (GUI)"
