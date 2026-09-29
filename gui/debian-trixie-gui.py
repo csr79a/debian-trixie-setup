@@ -9,6 +9,7 @@ abrir una ventana externa.
 """
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -210,12 +211,12 @@ class TrixieGUI(Gtk.Window):
         if (dest / ".git").is_dir():
             command = (
                 f"git -C {shlex.quote(str(dest))} pull --ff-only && "
-                f"exec bash {shlex.quote(str(dest / p["script"]))}"
+                f"exec bash {shlex.quote(str(dest / p['script']))}"
             )
         else:
             command = (
-                f"git clone {shlex.quote(p["url"]) + " " + shlex.quote(str(dest))} && "
-                f"exec bash {subprocess.list2cmdline([str(dest / p['script'])])}"
+                f"git clone {shlex.quote(p['url'])} {shlex.quote(str(dest))} && "
+                f"exec bash {shlex.quote(str(dest / p['script']))}"
             )
 
         self._write(f"\n$ {p['name']}\n")
@@ -234,13 +235,13 @@ class TrixieGUI(Gtk.Window):
             if (dest / ".git").is_dir():
                 commands.append(
                     f"echo '=== Actualizando {p['name']} ==='; "
-                    f"git -C {subprocess.list2cmdline([str(dest)])} pull --ff-only"
+                    f"git -C {shlex.quote(str(dest))} pull --ff-only"
                 )
             else:
                 COMPONENTS.mkdir(parents=True, exist_ok=True)
                 commands.append(
                     f"echo '=== Clonando {p['name']} ==='; "
-                    f"git clone {subprocess.list2cmdline([p['url'], str(dest)])}"
+                    f"git clone {shlex.quote(p['url'])} {shlex.quote(str(dest))}"
                 )
 
         command = " && ".join(commands) if commands else "true"
