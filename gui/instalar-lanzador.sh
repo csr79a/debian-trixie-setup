@@ -17,14 +17,14 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! python3 -c 'import tkinter' >/dev/null 2>&1; then
-    echo "Instalando python3-tk..."
+if ! python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")' >/dev/null 2>&1; then
+    echo "Instalando dependencias del terminal integrado (GTK/VTE)..."
     sudo apt update
-    sudo apt install -y python3-tk
+    sudo apt install -y python3-gi gir1.2-gtk-3.0 gir1.2-vte-2.91
 fi
 
-if ! python3 -c 'import tkinter' >/dev/null 2>&1; then
-    echo "ERROR: Tkinter sigue sin estar disponible después de instalar python3-tk." >&2
+if ! python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("Vte", "2.91")' >/dev/null 2>&1; then
+    echo "ERROR: GTK/VTE sigue sin estar disponible después de instalar sus dependencias." >&2
     exit 1
 fi
 
@@ -79,3 +79,4 @@ echo "  $DESKTOP"
 echo
 echo "Comprobación del GUI: OK"
 echo "Puedes abrir 'Debian Trixie Setup' desde el menú de aplicaciones de KDE."
+echo "Los instaladores ahora se ejecutan en el terminal integrado de la propia ventana."
