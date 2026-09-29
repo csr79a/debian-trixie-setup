@@ -18,6 +18,8 @@ Los componentes externos se descargan/actualizan en:
 
 Los scripts se ejecutan en un **terminal VTE integrado dentro de la propia ventana del GUI**. Así se conservan `sudo`, `whiptail` y cualquier interacción necesaria sin abrir una segunda ventana de terminal.
 
+La ventana incluye abajo un campo **Contraseña de sudo**. La contraseña se envía directamente a `sudo` para validar la sesión y se borra inmediatamente del campo. El GUI no la guarda en un archivo ni la muestra en el terminal. Mientras la aplicación está abierta intenta mantener vigente la autenticación sudo para evitar que un instalador largo vuelva a pedir la contraseña.
+
 ## Instalar el lanzador
 
 Desde la raíz del repositorio:
