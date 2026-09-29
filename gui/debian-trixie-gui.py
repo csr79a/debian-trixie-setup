@@ -8,7 +8,6 @@ en una terminal real para conservar sudo, whiptail y cualquier interacción.
 """
 from __future__ import annotations
 
-import os
 import shlex
 import shutil
 import subprocess
@@ -77,7 +76,6 @@ class TrixieGUI(tk.Tk):
         )
         self._card(
             cards, 1, "Limpieza",
-
             "Limpia aplicaciones KDE seleccionadas mediante el script independiente.",
             lambda: self.run_terminal(ROOT / "cleanup" / "cleanup-debian-trixie.sh"),
         )
@@ -99,32 +97,40 @@ class TrixieGUI(tk.Tk):
 
         actions = ttk.Frame(self)
         actions.pack(fill="x", pady=(0, 10))
-        ttk.Button(actions, text="Actualizar componentes externos",
-                   command=self.update_all).pack(side="left")
-        ttk.Button(actions, text="Abrir carpeta de componentes",
-                   command=self.open_components).pack(side="left", padx=8)
-        ttk.Button(actions, text="Cerrar",
-                   command=self.destroy).pack(side="right")
+        ttk.Button(
+            actions, text="Actualizar componentes externos",
+            command=self.update_all
+        ).pack(side="left")
+        ttk.Button(
+            actions, text="Abrir carpeta de componentes",
+            command=self.open_components
+        ).pack(side="left", padx=8)
+        ttk.Button(
+            actions, text="Cerrar",
+            command=self.destroy
+        ).pack(side="right")
 
         self.status = tk.StringVar(value="Listo.")
         ttk.Label(self, textvariable=self.status).pack(anchor="w", pady=(0, 6))
 
-        self.log = tk.Text(self, height=14, wrap="word", state="disabled",
-                           font=("Monospace", 9))
+        self.log = tk.Text(
+            self, height=14, wrap="word", state="disabled",
+            font=("Monospace", 9)
+        )
         self.log.pack(fill="both", expand=True)
 
         self.write(
             "Elige una categoría. Los instaladores se ejecutan en una terminal "
-            "real para mantener sus confirmaciones y sudo.
-"
+            "real para mantener sus confirmaciones y sudo.\n"
         )
 
     def _card(self, parent, column, title, description, command) -> None:
         frame = ttk.LabelFrame(parent, text=title, padding=12)
         frame.grid(row=0, column=column, sticky="nsew", padx=5)
         parent.columnconfigure(column, weight=1)
-        ttk.Label(frame, text=description, wraplength=190,
-                  justify="left").pack(fill="x", pady=(0, 10))
+        ttk.Label(
+            frame, text=description, wraplength=190, justify="left"
+        ).pack(fill="x", pady=(0, 10))
         ttk.Button(frame, text="Ejecutar", command=command).pack(anchor="e")
 
     def write(self, text: str) -> None:
@@ -134,7 +140,9 @@ class TrixieGUI(tk.Tk):
         self.log.configure(state="disabled")
 
     def terminal(self) -> str | None:
-        for cmd in ("konsole", "x-terminal-emulator", "xfce4-terminal", "gnome-terminal"):
+        for cmd in (
+            "konsole", "x-terminal-emulator", "xfce4-terminal", "gnome-terminal"
+        ):
             if shutil.which(cmd):
                 return cmd
         return None
@@ -143,6 +151,7 @@ class TrixieGUI(tk.Tk):
         if not script.is_file():
             messagebox.showerror("Archivo no encontrado", str(script))
             return
+
         term = self.terminal()
         if not term:
             messagebox.showerror(
@@ -151,14 +160,19 @@ class TrixieGUI(tk.Tk):
             )
             return
 
-        command = f"cd {shlex.quote(str(script.parent))} && bash {shlex.quote(script.name)}"
+        command = (
+            f"cd {shlex.quote(str(script.parent))} && "
+            f"bash {shlex.quote(script.name)}"
+        )
         self.write(f"Ejecutando: {script}\n")
         self.status.set(f"Ejecutando {script.name}…")
+
         try:
             subprocess.Popen([term, "-e", "bash", "-lc", command])
         except Exception as exc:
             messagebox.showerror("No se pudo abrir la terminal", str(exc))
             return
+
         self.status.set(f"Terminal abierta para {script.name}.")
 
     def sync_project(self, key: str) -> Path | None:
@@ -199,19 +213,24 @@ class TrixieGUI(tk.Tk):
                 "Instala Git con: sudo apt install git"
             )
             return
+
         dest = self.sync_project(key)
         if dest:
             self.run_terminal(dest / PROJECTS[key]["script"])
 
     def update_all(self) -> None:
         if not shutil.which("git"):
-            messagebox.showerror("Git no está instalado",
-                                 "Instala Git con: sudo apt install git")
+            messagebox.showerror(
+                "Git no está instalado",
+                "Instala Git con: sudo apt install git"
+            )
             return
+
         ok = True
         for key in PROJECTS:
             if self.sync_project(key) is None:
                 ok = False
+
         self.status.set(
             "Componentes externos actualizados." if ok
             else "La actualización terminó con errores."
