@@ -1,13 +1,15 @@
 # Manual — Scripts de configuración para Debian 13 (trixie)
 
-Este manual explica, paso a paso y desde cero, cómo preparar tu sistema y
-ejecutar los dos scripts de este proyecto:
+Este manual explica, paso a paso y desde cero, cómo preparar tu sistema,
+instalar el lanzador gráfico y ejecutar los componentes de este proyecto:
 
 - **`setup-debian-trixie.sh`** — configura repos, actualiza el sistema e
   instala un set de paquetes de desarrollo/multimedia/sistema. Ver
   `setup/README.md` para el detalle de qué instala.
 - **`cleanup-debian-trixie.sh`** — elimina aplicaciones de KDE Plasma que
   no usas. Ver `cleanup/README.md` para el detalle de qué elimina.
+- **`gui/debian-trixie-gui.py`** — lanzador gráfico que coordina el setup,
+  la limpieza y los dos componentes externos de hardware.
 
 No hace falta que sepas bash para seguir estos pasos.
 
@@ -155,7 +157,41 @@ opciones sin ejecutar nada:
 
 ---
 
-## 4. Orden recomendado
+## 4. Lanzador gráfico y componentes externos
+
+Desde la raíz del repositorio puedes instalar el lanzador gráfico:
+
+```bash
+chmod +x gui/instalar-lanzador.sh
+./gui/instalar-lanzador.sh
+```
+
+El instalador prepara `python3-tk` y `git` si son necesarios y registra **Debian Trixie Setup** en el menú de aplicaciones de KDE.
+
+El GUI tiene cuatro acciones:
+
+1. **Sistema Trixie** — ejecuta el setup local.
+2. **Limpieza** — ejecuta el cleanup local.
+3. **NVIDIA** — clona/actualiza y ejecuta `csr79a/nvidia-debian-setup`.
+4. **ASUS ROG** — clona/actualiza y ejecuta `csr79a/asusctl-rogcontrol-debian`.
+
+Los dos proyectos externos se guardan en:
+
+```text
+~/.local/share/debian-trixie-setup/components/
+```
+
+El GUI no copia la lógica de NVIDIA ni de ASUS dentro del proyecto Trixie: cada componente conserva su propio instalador, documentación y ciclo de actualización.
+
+Los instaladores se abren en una terminal real porque necesitan conservar las capacidades interactivas de `sudo`, `whiptail` y, en el caso de ASUS, las preguntas propias de su instalador.
+
+### Firefox
+
+La configuración de Firefox oficial de Mozilla permanece dentro del setup de Trixie. El flujo es deliberadamente seguro: se verifica la clave de Mozilla, se configura el repositorio, se intenta instalar Firefox release y **solo si esa instalación tiene éxito** se purga Firefox ESR y sus perfiles cuando corresponde.
+
+---
+
+## 5. Orden recomendado
 
 1. Deja `sudo` listo (paso 1).
 2. Ejecuta `setup/setup-debian-trixie.sh` en un sistema recién instalado,
@@ -168,7 +204,7 @@ opciones sin ejecutar nada:
 
 ---
 
-## 5. Si algo sale mal
+## 6. Si algo sale mal
 
 - Los mensajes de error de estos scripts están pensados para decirte
   **qué revisar** (normalmente, este manual o el README correspondiente).
