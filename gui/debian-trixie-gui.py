@@ -49,7 +49,7 @@ class TrixieGUI(Gtk.Window):
         self.set_default_size(1100, 700)
         self.set_size_request(820, 560)
         self.set_border_width(18)
-        self.connect("destroy", Gtk.main_quit)
+        self.connect("destroy", self._on_destroy)
 
         self.terminal = Vte.Terminal()
         self.terminal.connect("child-exited", self._child_exited)
@@ -59,6 +59,8 @@ class TrixieGUI(Gtk.Window):
 
         self.status = Gtk.Label(label="Listo.")
         self.status.set_xalign(0)
+        self.sudo_authenticated = False
+        self.sudo_timer_id = GLib.timeout_add_seconds(60, self._refresh_sudo)
 
         self._build()
 
@@ -128,6 +130,26 @@ class TrixieGUI(Gtk.Window):
         close.connect("clicked", lambda _button: self.destroy())
         actions.pack_end(close, False, False, 0)
 
+        auth_frame = Gtk.Frame(label="Autenticación sudo")
+        auth_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        auth_box.set_border_width(8)
+        auth_frame.add(auth_box)
+
+        auth_label = Gtk.Label(label="Contraseña:")
+        auth_box.pack_start(auth_label, False, False, 0)
+
+        self.password_entry = Gtk.Entry()
+        self.password_entry.set_visibility(False)
+        self.password_entry.set_placeholder_text("Contraseña de sudo")
+        self.password_entry.set_hexpand(True)
+        self.password_entry.connect("activate", lambda _entry: self.authenticate_sudo())
+        auth_box.pack_start(self.password_entry, True, True, 0)
+
+        auth_button = Gtk.Button(label="Autenticar")
+        auth_button.connect("clicked", lambda _button: self.authenticate_sudo())
+        auth_box.pack_start(auth_button, False, False, 0)
+
+        root.pack_start(auth_frame, False, False, 0)
         root.pack_start(self.status, False, False, 0)
 
         terminal_frame = Gtk.Frame(label="Terminal integrada")
@@ -164,6 +186,82 @@ class TrixieGUI(Gtk.Window):
 
         parent.pack_start(frame, True, True, 0)
 
+    def _on_destroy(self, _widget) -> None:
+        if self.sudo_timer_id:
+            GLib.source_remove(self.sudo_timer_id)
+            self.sudo_timer_id = 0
+        Gtk.main_quit()
+
+    def authenticate_sudo(self) -> None:
+        password = self.password_entry.get_text()
+        self.password_entry.set_text("")
+
+        if not password:
+            self.status.set_text("Introduce la contraseña de sudo.")
+            return
+
+        try:
+            result = subprocess.run(
+                ["sudo", "-S", "-v"],
+                input=password + "\n",
+                text=True,
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            self.sudo_authenticated = False
+            self.status.set_text(f"No se pudo autenticar sudo: {exc}")
+            return
+        finally:
+            password = ""
+
+        if result.returncode == 0:
+            self.sudo_authenticated = True
+            self.status.set_text("Sudo autenticado. Ya puedes ejecutar los instaladores.")
+            self._write("\n[OK] Autenticación sudo correcta.\n")
+        else:
+            self.sudo_authenticated = False
+            self.status.set_text("Contraseña de sudo incorrecta o sudo rechazó la autenticación.")
+            self._write("\n[ERROR] No se pudo autenticar sudo.\n")
+
+    def _refresh_sudo(self) -> bool:
+        if not self.sudo_authenticated:
+            return True
+
+        try:
+            result = subprocess.run(
+                ["sudo", "-n", "-v"],
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return True
+
+        if result.returncode != 0:
+            self.sudo_authenticated = False
+            self.status.set_text("La autenticación sudo ha expirado. Vuelve a autenticarte.")
+        return True
+
+    def _ensure_sudo(self) -> bool:
+        if self.sudo_authenticated:
+            result = subprocess.run(
+                ["sudo", "-n", "-v"],
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+            if result.returncode == 0:
+                return True
+
+        self.sudo_authenticated = False
+        self.status.set_text("Introduce la contraseña de sudo y pulsa «Autenticar».")
+        self.password_entry.grab_focus()
+        return False
+
     def _write(self, text: str) -> None:
         self.terminal.feed(text.encode("utf-8"))
 
@@ -194,6 +292,9 @@ class TrixieGUI(Gtk.Window):
             self.status.set_text(f"El proceso terminó con código {status}.")
 
     def run_script(self, script: Path) -> None:
+        if not self._ensure_sudo():
+            return
+
         if not script.is_file():
             self._write(f"\n[ERROR] Archivo no encontrado: {script}\n")
             self.status.set_text("Archivo no encontrado.")
@@ -204,6 +305,9 @@ class TrixieGUI(Gtk.Window):
         self._spawn(f"exec bash {shlex.quote(script.name)}", script.parent)
 
     def external(self, key: str) -> None:
+        if not self._ensure_sudo():
+            return
+
         if not shutil.which("git"):
             self._write("\n[ERROR] Git no está instalado.\n")
             self.status.set_text("Git no está instalado.")
