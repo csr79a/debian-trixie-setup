@@ -215,7 +215,6 @@ ahí, verás un mensaje claro señalando este README en vez de un error de
 | Fuentes (opcional, con confirmación aparte) | `ttf-mscorefonts-installer` (fuentes de Windows, acepta la EULA con `-y`), `fonts-ubuntu` |
 | Microcode | `intel-microcode` o `amd64-microcode`, según CPU detectada |
 | ZRAM (opcional, con confirmación aparte) | `zram-tools`, tamaño calculado automáticamente (mitad de la RAM total) |
-| NVIDIA (opcional, solo si se detecta GPU NVIDIA) | `nvidia-open`, `nvidia-kernel-open-dkms`, `nvidia-settings`, `dkms`, `linux-headers-amd64`, `firmware-misc-nonfree`, paquetes de Vulkan |
 
 ---
 
