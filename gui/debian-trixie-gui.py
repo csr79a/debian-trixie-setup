@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Instalador de Aplicaciones Debian Testing: ventana que reúne los scripts de
+"""Debian Trixie Setup: ventana que reúne los scripts de
 configuración del sistema (PyQt6).
 
 Cada botón clona o actualiza el repo del proyecto y ejecuta su script tal cual,
