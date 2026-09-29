@@ -16,9 +16,22 @@ Los componentes externos se descargan/actualizan en:
 
 `~/.local/share/debian-trixie-setup/components/`
 
-Los scripts se ejecutan en un **terminal VTE integrado dentro de la propia ventana del GUI**. Así se conservan `sudo`, `whiptail` y cualquier interacción necesaria sin abrir una segunda ventana de terminal.
+## GUI Qt
 
-La ventana incluye abajo un campo **Contraseña de sudo**. La contraseña se envía directamente a `sudo` para validar la sesión y se borra inmediatamente del campo. El GUI no la guarda en un archivo ni la muestra en el terminal. Mientras la aplicación está abierta intenta mantener vigente la autenticación sudo para evitar que un instalador largo vuelva a pedir la contraseña.
+La aplicación usa **PyQt6** y mantiene un **único pseudo-terminal (PTY)** dentro de la ventana.
+
+Esto es importante para `sudo`: la autenticación se realiza dentro del mismo PTY que posteriormente utilizan los scripts. De esta forma, la credencial temporal de sudo pertenece al mismo terminal y los comandos `sudo` de los instaladores pueden reutilizarla.
+
+La ventana incluye abajo:
+
+- campo gráfico **Contraseña de sudo**;
+- botón **Autenticar**;
+- terminal integrada;
+- botones para Sistema, Limpieza, Gaming, NVIDIA y ASUS ROG.
+
+La contraseña no se guarda en un archivo ni se escribe deliberadamente en el historial del shell. El campo se limpia inmediatamente después de pulsar **Autenticar**.
+
+El terminal integrado conserva la interacción de los scripts, incluidos `sudo`, `whiptail` y las preguntas normales de los instaladores.
 
 ## Instalar el lanzador
 
@@ -33,10 +46,22 @@ Después aparecerá **Debian Trixie Setup** en el menú de aplicaciones de KDE.
 
 ## Dependencias
 
+El instalador comprueba e instala automáticamente:
+
 - Python 3
-- GTK 3 (`gir1.2-gtk-3.0`)
-- PyGObject (`python3-gi`)
-- VTE 2.91 (`gir1.2-vte-2.91`)
+- `python3-pyqt6`
+- `python3-pyte`
 - Git
 
-No es necesario instalar Konsole ni otro emulador de terminal para ejecutar los instaladores desde el GUI.
+No se necesita GTK, VTE, Konsole ni otro emulador de terminal externo.
+
+## Ejecución directa
+
+También puedes comprobar el GUI directamente:
+
+```bash
+python3 -m py_compile gui/debian-trixie-gui.py
+python3 gui/debian-trixie-gui.py
+```
+
+La aplicación debe ejecutarse como usuario normal, no como root.
