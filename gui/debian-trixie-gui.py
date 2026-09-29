@@ -2,18 +2,24 @@
 """
 Debian Trixie Setup — lanzador gráfico
 
-El GUI no duplica la lógica de instalación: orquesta los scripts de este
-repositorio y los proyectos externos NVIDIA/ASUS. Los scripts se ejecutan
-en una terminal real para conservar sudo, whiptail y cualquier interacción.
+El GUI orquesta los scripts del repositorio y los proyectos externos.
+La ejecución se realiza en un terminal VTE integrado en esta misma ventana,
+para conservar sudo, whiptail y cualquier otra interacción de terminal sin
+abrir una ventana externa.
 """
 from __future__ import annotations
 
-import shlex
 import shutil
 import subprocess
-import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Vte", "2.91")
+
+from gi.repository import GLib, Gtk, Vte
+
 
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENTS = Path.home() / ".local" / "share" / "debian-trixie-setup" / "components"
@@ -36,205 +42,211 @@ PROJECTS = {
 }
 
 
-class TrixieGUI(tk.Tk):
+class TrixieGUI(Gtk.Window):
     def __init__(self) -> None:
-        super().__init__()
-        self.title("Debian Trixie Setup")
-        self.geometry("1100x620")
-        self.minsize(760, 520)
+        super().__init__(title="Debian Trixie Setup")
+        self.set_default_size(1100, 700)
+        self.set_size_request(820, 560)
+        self.set_border_width(18)
+        self.connect("destroy", Gtk.main_quit)
 
-        style = ttk.Style(self)
-        try:
-            style.theme_use("clam")
-        except tk.TclError:
-            pass
+        self.terminal = Vte.Terminal()
+        self.terminal.set_scrollback_lines(10000)
+        self.terminal.set_hexpand(True)
+        self.terminal.set_vexpand(True)
 
-        self.configure(padx=18, pady=18)
+        self.status = Gtk.Label(label="Listo.")
+        self.status.set_xalign(0)
+
         self._build()
 
     def _build(self) -> None:
-        header = ttk.Frame(self)
-        header.pack(fill="x", pady=(0, 14))
+        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.add(root)
 
-        ttk.Label(
-            header, text="Debian Trixie Setup",
-            font=("Sans", 22, "bold")
-        ).pack(anchor="w")
-        ttk.Label(
-            header,
-            text="Debian 13 · KDE Plasma · lanzador de componentes",
-            font=("Sans", 10)
-        ).pack(anchor="w", pady=(2, 0))
+        title = Gtk.Label()
+        title.set_markup("<span size='xx-large' weight='bold'>Debian Trixie Setup</span>")
+        title.set_xalign(0)
+        root.pack_start(title, False, False, 0)
 
-        cards = ttk.Frame(self)
-        cards.pack(fill="x", pady=(0, 14))
+        subtitle = Gtk.Label(label="Debian 13 · KDE Plasma · lanzador de componentes")
+        subtitle.set_xalign(0)
+        root.pack_start(subtitle, False, False, 0)
+
+        cards = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        root.pack_start(cards, False, False, 0)
 
         self._card(
-            cards, 0, "Sistema Trixie",
+            cards,
+            "Sistema Trixie",
             "Repositorios deb822, paquetes base, microcode, zram y Firefox oficial de Mozilla.",
-            lambda: self.run_terminal(ROOT / "setup" / "setup-debian-trixie.sh"),
+            lambda: self.run_script(ROOT / "setup" / "setup-debian-trixie.sh"),
         )
         self._card(
-            cards, 1, "Limpieza",
+            cards,
+            "Limpieza",
             "Limpia aplicaciones KDE seleccionadas mediante el script independiente.",
-            lambda: self.run_terminal(ROOT / "cleanup" / "cleanup-debian-trixie.sh"),
+            lambda: self.run_script(ROOT / "cleanup" / "cleanup-debian-trixie.sh"),
         )
         self._card(
-            cards, 2, "Gaming",
+            cards,
+            "Gaming",
             "Steam/Proton, GameMode, MangoHud, Protontricks, Heroic, Lutris y Gamescope.",
-            lambda: self.run_terminal(ROOT / "gaming" / "setup-gaming-debian-trixie.sh"),
+            lambda: self.run_script(ROOT / "gaming" / "setup-gaming-debian-trixie.sh"),
         )
         self._card(
-            cards, 3, "NVIDIA",
+            cards,
+            "NVIDIA",
             PROJECTS["nvidia"]["description"],
             lambda: self.external("nvidia"),
         )
         self._card(
-            cards, 4, "ASUS ROG",
+            cards,
+            "ASUS ROG",
             PROJECTS["asus"]["description"],
             lambda: self.external("asus"),
         )
 
-        actions = ttk.Frame(self)
-        actions.pack(fill="x", pady=(0, 10))
-        ttk.Button(
-            actions, text="Actualizar componentes externos",
-            command=self.update_all
-        ).pack(side="left")
-        ttk.Button(
-            actions, text="Abrir carpeta de componentes",
-            command=self.open_components
-        ).pack(side="left", padx=8)
-        ttk.Button(
-            actions, text="Cerrar",
-            command=self.destroy
-        ).pack(side="right")
+        actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        root.pack_start(actions, False, False, 0)
 
-        self.status = tk.StringVar(value="Listo.")
-        ttk.Label(self, textvariable=self.status).pack(anchor="w", pady=(0, 6))
+        update = Gtk.Button(label="Actualizar componentes externos")
+        update.connect("clicked", lambda _button: self.update_all())
+        actions.pack_start(update, False, False, 0)
 
-        self.log = tk.Text(
-            self, height=14, wrap="word", state="disabled",
-            font=("Monospace", 9)
+        folder = Gtk.Button(label="Abrir carpeta de componentes")
+        folder.connect("clicked", lambda _button: self.open_components())
+        actions.pack_start(folder, False, False, 0)
+
+        clear = Gtk.Button(label="Limpiar terminal")
+        clear.connect("clicked", lambda _button: self.terminal.reset(True, True))
+        actions.pack_start(clear, False, False, 0)
+
+        close = Gtk.Button(label="Cerrar")
+        close.connect("clicked", lambda _button: self.destroy())
+        actions.pack_end(close, False, False, 0)
+
+        root.pack_start(self.status, False, False, 0)
+
+        terminal_frame = Gtk.Frame(label="Terminal integrada")
+        terminal_frame.set_shadow_type(Gtk.ShadowType.IN)
+        terminal_frame.add(self.terminal)
+        root.pack_start(terminal_frame, True, True, 0)
+
+        self._write(
+            "Listo. Pulsa un botón: el instalador se ejecutará aquí mismo, "
+            "dentro de esta ventana, sin abrir otra terminal.\n"
         )
-        self.log.pack(fill="both", expand=True)
 
-        self.write(
-            "Elige una categoría. Los instaladores se ejecutan en una terminal "
-            "real para mantener sus confirmaciones y sudo.\n"
+    def _card(self, parent, title: str, description: str, command) -> None:
+        frame = Gtk.Frame()
+        frame.set_label(title)
+        frame.set_margin_left(2)
+        frame.set_margin_right(2)
+        frame.set_margin_top(2)
+        frame.set_margin_bottom(2)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_border_width(10)
+        frame.add(box)
+
+        label = Gtk.Label(label=description)
+        label.set_line_wrap(True)
+        label.set_max_width_chars(24)
+        label.set_xalign(0)
+        box.pack_start(label, True, True, 0)
+
+        button = Gtk.Button(label="Ejecutar")
+        button.connect("clicked", lambda _button: command())
+        box.pack_end(button, False, False, 0)
+
+        parent.pack_start(frame, True, True, 0)
+
+    def _write(self, text: str) -> None:
+        self.terminal.feed(text.encode("utf-8"))
+
+    def _spawn(self, command: str, cwd: Path) -> None:
+        argv = ["/bin/bash", "-lc", command]
+        self.terminal.spawn_async(
+            Vte.PtyFlags.DEFAULT,
+            str(cwd),
+            argv,
+            None,
+            GLib.SpawnFlags.DEFAULT,
+            None,
+            None,
+            -1,
+            None,
+            self._child_exited,
+            None,
         )
 
-    def _card(self, parent, column, title, description, command) -> None:
-        frame = ttk.LabelFrame(parent, text=title, padding=12)
-        frame.grid(row=0, column=column, sticky="nsew", padx=5)
-        parent.columnconfigure(column, weight=1)
-        ttk.Label(
-            frame, text=description, wraplength=190, justify="left"
-        ).pack(fill="x", pady=(0, 10))
-        ttk.Button(frame, text="Ejecutar", command=command).pack(anchor="e")
+    def _child_exited(self, _terminal, status: int, _user_data) -> None:
+        if status == 0:
+            self.status.set_text("Finalizado correctamente.")
+        else:
+            self.status.set_text(f"El proceso terminó con código {status}.")
 
-    def write(self, text: str) -> None:
-        self.log.configure(state="normal")
-        self.log.insert("end", text)
-        self.log.see("end")
-        self.log.configure(state="disabled")
-
-    def terminal(self) -> str | None:
-        for cmd in (
-            "konsole", "x-terminal-emulator", "xfce4-terminal", "gnome-terminal"
-        ):
-            if shutil.which(cmd):
-                return cmd
-        return None
-
-    def run_terminal(self, script: Path) -> None:
+    def run_script(self, script: Path) -> None:
         if not script.is_file():
-            messagebox.showerror("Archivo no encontrado", str(script))
+            self._write(f"\n[ERROR] Archivo no encontrado: {script}\n")
+            self.status.set_text("Archivo no encontrado.")
             return
 
-        term = self.terminal()
-        if not term:
-            messagebox.showerror(
-                "Terminal no encontrada",
-                "No se encontró Konsole ni otro emulador de terminal compatible."
-            )
+        self._write(f"\n$ bash {script.name}\n")
+        self.status.set_text(f"Ejecutando {script.name}…")
+        self._spawn(f"exec bash {subprocess.list2cmdline([script.name])}", script.parent)
+
+    def external(self, key: str) -> None:
+        if not shutil.which("git"):
+            self._write("\n[ERROR] Git no está instalado.\n")
+            self.status.set_text("Git no está instalado.")
             return
 
-        command = (
-            f"cd {shlex.quote(str(script.parent))} && "
-            f"bash {shlex.quote(script.name)}"
-        )
-        self.write(f"Ejecutando: {script}\n")
-        self.status.set(f"Ejecutando {script.name}…")
-
-        try:
-            subprocess.Popen([term, "-e", "bash", "-lc", command])
-        except Exception as exc:
-            messagebox.showerror("No se pudo abrir la terminal", str(exc))
-            return
-
-        self.status.set(f"Terminal abierta para {script.name}.")
-
-    def sync_project(self, key: str) -> Path | None:
         p = PROJECTS[key]
         dest = Path(p["dir"])
         COMPONENTS.mkdir(parents=True, exist_ok=True)
 
         if (dest / ".git").is_dir():
-            self.write(f"Actualizando {p['name']}…\n")
-            result = subprocess.run(
-                ["git", "-C", str(dest), "pull", "--ff-only"],
-                text=True, capture_output=True
+            command = (
+                f"git -C {subprocess.list2cmdline([str(dest)])} pull --ff-only && "
+                f"exec bash {subprocess.list2cmdline([str(dest / p['script'])])}"
             )
         else:
-            self.write(f"Clonando {p['name']}…\n")
-            result = subprocess.run(
-                ["git", "clone", p["url"], str(dest)],
-                text=True, capture_output=True
+            command = (
+                f"git clone {subprocess.list2cmdline([p['url'], str(dest)])} && "
+                f"exec bash {subprocess.list2cmdline([str(dest / p['script'])])}"
             )
 
-        if result.stdout:
-            self.write(result.stdout + "\n")
-        if result.returncode != 0:
-            self.write(result.stderr + "\n")
-            messagebox.showerror(
-                f"Error — {p['name']}",
-                result.stderr.strip() or "Git terminó con código de error."
-            )
-            return None
-
-        self.write(f"{p['name']} listo.\n")
-        return dest
-
-    def external(self, key: str) -> None:
-        if not shutil.which("git"):
-            messagebox.showerror(
-                "Git no está instalado",
-                "Instala Git con: sudo apt install git"
-            )
-            return
-
-        dest = self.sync_project(key)
-        if dest:
-            self.run_terminal(dest / PROJECTS[key]["script"])
+        self._write(f"\n$ {p['name']}\n")
+        self.status.set_text(f"Preparando {p['name']}…")
+        self._spawn(command, COMPONENTS)
 
     def update_all(self) -> None:
         if not shutil.which("git"):
-            messagebox.showerror(
-                "Git no está instalado",
-                "Instala Git con: sudo apt install git"
-            )
+            self._write("\n[ERROR] Git no está instalado.\n")
+            self.status.set_text("Git no está instalado.")
             return
 
-        ok = True
-        for key in PROJECTS:
-            if self.sync_project(key) is None:
-                ok = False
+        commands = []
+        for key, p in PROJECTS.items():
+            dest = Path(p["dir"])
+            if (dest / ".git").is_dir():
+                commands.append(
+                    f"echo '=== Actualizando {p['name']} ==='; "
+                    f"git -C {subprocess.list2cmdline([str(dest)])} pull --ff-only"
+                )
+            else:
+                COMPONENTS.mkdir(parents=True, exist_ok=True)
+                commands.append(
+                    f"echo '=== Clonando {p['name']} ==='; "
+                    f"git clone {subprocess.list2cmdline([p['url'], str(dest)])}"
+                )
 
-        self.status.set(
-            "Componentes externos actualizados." if ok
-            else "La actualización terminó con errores."
-        )
+        command = " && ".join(commands) if commands else "true"
+        self._write("\n$ Actualizando componentes externos…\n")
+        self.status.set_text("Actualizando componentes externos…")
+        self._spawn(command, COMPONENTS)
 
     def open_components(self) -> None:
         COMPONENTS.mkdir(parents=True, exist_ok=True)
@@ -242,8 +254,10 @@ class TrixieGUI(tk.Tk):
         if opener:
             subprocess.Popen([opener, str(COMPONENTS)])
         else:
-            messagebox.showinfo("Carpeta", str(COMPONENTS))
+            self._write(f"\nCarpeta: {COMPONENTS}\n")
 
 
 if __name__ == "__main__":
-    TrixieGUI().mainloop()
+    win = TrixieGUI()
+    win.show_all()
+    Gtk.main()
