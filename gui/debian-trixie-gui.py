@@ -195,7 +195,7 @@ class TrixieGUI(Gtk.Window):
 
         self._write(f"\n$ bash {script.name}\n")
         self.status.set_text(f"Ejecutando {script.name}…")
-        self._spawn(f"exec bash {subprocess.list2cmdline([script.name])}", script.parent)
+        self._spawn(f"exec bash {shlex.quote(script.name)}", script.parent)
 
     def external(self, key: str) -> None:
         if not shutil.which("git"):
@@ -209,12 +209,12 @@ class TrixieGUI(Gtk.Window):
 
         if (dest / ".git").is_dir():
             command = (
-                f"git -C {subprocess.list2cmdline([str(dest)])} pull --ff-only && "
-                f"exec bash {subprocess.list2cmdline([str(dest / p['script'])])}"
+                f"git -C {shlex.quote(str(dest))} pull --ff-only && "
+                f"exec bash {shlex.quote(str(dest / p["script"]))}"
             )
         else:
             command = (
-                f"git clone {subprocess.list2cmdline([p['url'], str(dest)])} && "
+                f"git clone {shlex.quote(p["url"]) + " " + shlex.quote(str(dest))} && "
                 f"exec bash {subprocess.list2cmdline([str(dest / p['script'])])}"
             )
 
