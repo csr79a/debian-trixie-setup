@@ -375,6 +375,21 @@ class TrixieGUI(QMainWindow):
             b"sudo -S -v; "
             b"printf '\\n__TRIXIE_SUDO_RESULT__:%s\\n' "$?"\n"
         )
+        # Normalmente la contraseña se envía al detectar el prompt de sudo.
+        # Este temporizador cubre prompts traducidos o respuestas lentas,
+        # pero no envía nada si sudo ya terminó.
+        QTimer.singleShot(2000, self._send_pending_password)
+
+    def _send_pending_password(self) -> None:
+        if not self.auth_pending:
+            return
+
+        password = self.auth_password
+        self.auth_password = ""
+        self.auth_pending = False
+
+        if password:
+            self._write_pty((password + "\\n").encode("utf-8"))
 
     def _ensure_sudo(self, action) -> bool:
         if self.authenticated:
