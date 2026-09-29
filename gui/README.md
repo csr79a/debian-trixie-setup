@@ -16,8 +16,7 @@ Los componentes externos se descargan/actualizan en:
 
 `~/.local/share/debian-trixie-setup/components/`
 
-Los scripts se abren en una terminal real para conservar sus preguntas de sudo,
-whiptail y cualquier interacción necesaria.
+Los scripts se ejecutan en un **terminal VTE integrado dentro de la propia ventana del GUI**. Así se conservan `sudo`, `whiptail` y cualquier interacción necesaria sin abrir una segunda ventana de terminal.
 
 ## Instalar el lanzador
 
@@ -33,6 +32,9 @@ Después aparecerá **Debian Trixie Setup** en el menú de aplicaciones de KDE.
 ## Dependencias
 
 - Python 3
-- Tkinter (`python3-tk`)
+- GTK 3 (`gir1.2-gtk-3.0`)
+- PyGObject (`python3-gi`)
+- VTE 2.91 (`gir1.2-vte-2.91`)
 - Git
-- Un emulador de terminal, preferentemente Konsole en KDE.
+
+No es necesario instalar Konsole ni otro emulador de terminal para ejecutar los instaladores desde el GUI.
