@@ -157,7 +157,29 @@ opciones sin ejecutar nada:
 
 ---
 
-## 4. Lanzador gráfico y componentes externos
+## 4. Gaming
+
+El componente de gaming está integrado en `gaming/` y mantiene sus scripts independientes del setup general de Debian.
+
+Instalación:
+
+```bash
+chmod +x gaming/setup-gaming-debian-trixie.sh
+gaming/setup-gaming-debian-trixie.sh
+```
+
+Limpieza:
+
+```bash
+gaming/cleanup-gaming-debian-trixie.sh --dry-run
+gaming/cleanup-gaming-debian-trixie.sh
+```
+
+La documentación específica está en [`gaming/README.md`](gaming/README.md) y [`gaming/docs/MANUAL.md`](gaming/docs/MANUAL.md).
+
+El componente conserva la política específica de gaming: MangoHud se compila desde fuente con NVML, Protontricks se instala mediante pipx y Gamescope se obtiene de Trixie Backports.
+
+## 5. Lanzador gráfico y componentes externos
 
 Desde la raíz del repositorio puedes instalar el lanzador gráfico:
 
@@ -191,7 +213,7 @@ La configuración de Firefox oficial de Mozilla permanece dentro del setup de Tr
 
 ---
 
-## 5. Orden recomendado
+## 6. Orden recomendado
 
 1. Deja `sudo` listo (paso 1).
 2. Ejecuta `setup/setup-debian-trixie.sh` en un sistema recién instalado,
@@ -204,7 +226,7 @@ La configuración de Firefox oficial de Mozilla permanece dentro del setup de Tr
 
 ---
 
-## 6. Si algo sale mal
+## 7. Si algo sale mal
 
 - Los mensajes de error de estos scripts están pensados para decirte
   **qué revisar** (normalmente, este manual o el README correspondiente).
