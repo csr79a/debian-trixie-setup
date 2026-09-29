@@ -8,6 +8,7 @@ El proyecto separa el sistema base de los componentes de hardware externos: el s
 
 - **Sistema Trixie** — [`setup/`](setup/): repositorios oficiales en formato deb822, actualización, paquetes base, microcode, zram y Firefox oficial de Mozilla.
 - **Limpieza** — [`cleanup/`](cleanup/): elimina aplicaciones KDE seleccionadas mediante un script independiente.
+- **Gaming** — [`gaming/`](gaming/): Steam/Proton, GameMode, MangoHud, Protontricks, Heroic, Lutris, Gamescope y herramientas relacionadas.
 - **GUI** — [`gui/`](gui/): lanzador gráfico que orquesta los componentes.
 - **NVIDIA** — [`csr79a/nvidia-debian-setup`](https://github.com/csr79a/nvidia-debian-setup): proyecto independiente invocado por el GUI.
 - **ASUS ROG** — [`csr79a/asusctl-rogcontrol-debian`](https://github.com/csr79a/asusctl-rogcontrol-debian): proyecto independiente para asusctl + rog-control-center.
@@ -31,9 +32,10 @@ chmod +x setup/setup-debian-trixie.sh cleanup/cleanup-debian-trixie.sh
 
 ./setup/setup-debian-trixie.sh
 ./cleanup/cleanup-debian-trixie.sh
+./gaming/setup-gaming-debian-trixie.sh
 ```
 
-El lanzador descarga/actualiza los proyectos NVIDIA y ASUS en:
+El lanzador ejecuta directamente los componentes locales de Sistema Trixie, Gaming y Limpieza, y descarga/actualiza los proyectos NVIDIA y ASUS en:
 
 ```text
 ~/.local/share/debian-trixie-setup/components/
@@ -50,6 +52,7 @@ El setup de Trixie conserva el flujo seguro del proyecto de referencia: verifica
 - [`setup/README.md`](setup/README.md) — detalle del setup de Trixie.
 - [`cleanup/README.md`](cleanup/README.md) — detalle de la limpieza.
 - [`gui/README.md`](gui/README.md) — lanzador gráfico.
+- [`gaming/README.md`](gaming/README.md) — componente de gaming.
 - [`MANUAL.md`](MANUAL.md) — guía desde cero.
 
 ## Licencia
