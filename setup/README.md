@@ -59,11 +59,8 @@ El script ejecuta, en orden, los siguientes pasos:
     para zram (ver [sección dedicada](#zram-swap-comprimido-en-ram-tamaño-automático)).
 11. Pregunta si quieres sustituir Firefox ESR por el **Firefox oficial de
     Mozilla** (ver [sección dedicada](#firefox-oficial-de-mozilla)).
-12. Si detecta una GPU **NVIDIA** por `lspci`, pregunta si quieres instalar
-    el driver propietario (`nvidia-open`), avisando antes de la limitación
-    de compatibilidad (ver [sección dedicada](#driver-nvidia)).
 13. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic, fuentes, zram,
-    Firefox, NVIDIA y el sources.list clásico neutralizado).
+    Firefox y el sources.list clásico neutralizado).
 
 ---
 
