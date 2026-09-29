@@ -17,14 +17,14 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 1
 fi
 
-if ! python3 -c 'import PyQt6, pyte' >/dev/null 2>&1; then
+if ! python3 -c 'import PyQt6' >/dev/null 2>&1; then
     echo "Instalando dependencias del GUI Qt..."
     sudo apt update
-    sudo apt install -y python3-pyqt6 python3-pyte
+    sudo apt install -y python3-pyqt6
 fi
 
 if ! python3 -c 'import PyQt6, pyte' >/dev/null 2>&1; then
-    echo "ERROR: PyQt6/pyte sigue sin estar disponible después de instalar sus dependencias." >&2
+    echo "ERROR: PyQt6 sigue sin estar disponible después de instalar sus dependencias." >&2
     exit 1
 fi
 
@@ -73,6 +73,6 @@ echo "Lanzador instalado correctamente:"
 echo "  $DESKTOP"
 echo
 echo "Comprobación del GUI: OK"
-echo "Dependencias: PyQt6 + pyte"
+echo "Dependencias: PyQt6"
 echo "Puedes abrir 'Debian Trixie Setup' desde el menú de aplicaciones de KDE."
 echo "Los instaladores se ejecutan en el terminal integrado de la propia ventana."
