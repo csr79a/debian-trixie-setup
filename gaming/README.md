@@ -174,17 +174,15 @@ El limpiador no elimina:
 
 El kernel estable de Trixie puede no proporcionar `ntsync`. En ese caso el instalador lo informa y continúa: no se considera un fallo fatal. Si utilizas un kernel de Trixie Backports con soporte para `ntsync`, puedes volver a ejecutar el instalador para configurarlo.
 
-## Estructura del proyecto
+## Estructura del componente
 
 ```text
-.
+gaming/
 ├── README.md
-├── gaming/setup-gaming-debian-trixie.sh
-├── gaming/cleanup-gaming-debian-trixie.sh
-└── docs
-    ├── README.md
+├── setup-gaming-debian-trixie.sh
+├── cleanup-gaming-debian-trixie.sh
+└── docs/
     ├── MANUAL.md
-    ├── INSTALACION.md
     └── DESINSTALACION.md
 ```
 
