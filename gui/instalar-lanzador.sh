@@ -63,7 +63,18 @@ StartupNotify=true
 EOF
 
 chmod +x "$GUI"
-chmod +x     "$ROOT/setup/setup-debian-trixie.sh"     "$ROOT/cleanup/cleanup-debian-trixie.sh"     "$ROOT/gaming/setup-gaming-debian-trixie.sh"     "$ROOT/gaming/cleanup-gaming-debian-trixie.sh"
+
+for script in \
+    "$ROOT/setup/setup-debian-trixie.sh" \
+    "$ROOT/cleanup/cleanup-debian-trixie.sh" \
+    "$ROOT/gaming/setup-gaming-debian-trixie.sh" \
+    "$ROOT/gaming/cleanup-gaming-debian-trixie.sh"; do
+    if [[ ! -f "$script" ]]; then
+        echo "ERROR: no se encontró el script: $script" >&2
+        exit 1
+    fi
+    chmod +x "$script"
+done
 
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "$DESKTOP_DIR" >/dev/null 2>&1 || true
@@ -73,6 +84,6 @@ echo "Lanzador instalado correctamente:"
 echo "  $DESKTOP"
 echo
 echo "Comprobación del GUI: OK"
-echo "Dependencias: PyQt6"
+echo "Dependencias: PyQt6 y Git"
 echo "Puedes abrir 'Debian Trixie Setup' desde el menú de aplicaciones de KDE."
-echo "Los instaladores se ejecutan en el terminal integrado de la propia ventana."
+echo "Los instaladores se ejecutan en el terminal integrado; los scripts con menús o listas pueden abrir Konsole."
