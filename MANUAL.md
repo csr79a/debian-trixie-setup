@@ -123,9 +123,9 @@ El `./` al principio le dice a la terminal "ejecuta el archivo que está
 aquí, en esta carpeta" (por seguridad, Linux no busca automáticamente
 programas en la carpeta actual).
 
-Los dos scripts son **interactivos por defecto**: te van preguntando
-antes de cada paso importante (`[y/N]` — escribe `y` y Enter para
-confirmar, cualquier otra cosa o Enter vacío para rechazar). Cuando
+Los dos scripts son **interactivos por defecto**: muestran pantallas de
+confirmación para los pasos importantes. En el setup de Trixie se usa
+`whiptail`; selecciona **Sí** o **No** según corresponda. Cuando
 `sudo` necesite tu contraseña, te la pedirá en el momento; es tu
 contraseña de usuario normal, no la de `root`.
 
@@ -209,7 +209,13 @@ Los instaladores se abren en una terminal real porque necesitan conservar las ca
 
 ### Firefox
 
-La configuración de Firefox oficial de Mozilla permanece dentro del setup de Trixie. El flujo es deliberadamente seguro: se verifica la clave de Mozilla, se configura el repositorio, se intenta instalar Firefox release y **solo si esa instalación tiene éxito** se purga Firefox ESR y sus perfiles cuando corresponde.
+La configuración de Firefox oficial de Mozilla permanece dentro del setup
+de Trixie. El flujo es deliberadamente no destructivo hasta comprobar que
+Firefox release puede instalarse: se verifica la clave de Mozilla, se
+configura el repositorio, se intenta instalar Firefox y **solo si esa
+instalación tiene éxito** se purga Firefox ESR y se eliminan sus perfiles
+cuando corresponde. Si falla la verificación de la clave o la instalación,
+ESR y sus perfiles no se tocan.
 
 ---
 
@@ -233,7 +239,10 @@ La configuración de Firefox oficial de Mozilla permanece dentro del setup de Tr
 - `apt` nunca elimina nada sin mostrarte antes el resumen completo de la
   transacción (a menos que uses `-y`), así que siempre puedes cancelar
   con `Ctrl+C` o respondiendo que no, antes de que se aplique.
-- Ninguno de los dos scripts es destructivo de forma irreversible: los
-  paquetes se pueden reinstalar (`sudo apt install <paquete>`) y, si
-  usaste `apt remove` en vez de `--purge`, tu configuración debería
-  seguir intacta.
+- El setup de Trixie incluye operaciones que pueden ser destructivas:
+  si confirmas la sustitución de Firefox ESR, puede purgar el paquete y
+  borrar `~/.mozilla/firefox` de forma irreversible. También puede
+  comentar el contenido activo de `/etc/apt/sources.list` después de
+  crear una copia de seguridad. Lee las confirmaciones antes de aceptar.
+- El cleanup también puede eliminar paquetes de KDE seleccionados. Revisa
+  su README antes de ejecutarlo.
