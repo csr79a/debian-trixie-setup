@@ -2,10 +2,9 @@
 """Debian Trixie Setup: ventana que reúne los scripts de
 configuración del sistema (PyQt6).
 
-Cada botón clona o actualiza el repo del proyecto y ejecuta su script tal cual,
-sin modificarlo. El lanzador corre como usuario normal.
+Las acciones locales ejecutan directamente los scripts de este repositorio; las acciones remotas clonan o actualizan su proyecto antes de ejecutarlo. El lanzador corre como usuario normal.
 
-Modos de ejecución (campo "modo" de cada acción en proyectos.json):
+Modos de ejecución (campo "modo" de cada acción en el diccionario CONFIG):
 
   auto        (por defecto) El script se ejecuta DENTRO de esta ventana, en un
               pseudo-terminal: salida con colores, preguntas (read) y contraseña
@@ -125,7 +124,7 @@ DIALOG_RE = re.compile(r"\bdialog\s+--")
 TIPOS_NO_SOPORTADOS_RE = re.compile(
     r"--(menu|checklist|radiolist|inputbox|passwordbox|gauge|textbox|tailbox|fselect)\b")
 
-SHIM_DIR = Path.home() / ".local/share/instalador-aplicaciones-debian-testing/shims"
+SHIM_DIR = Path.home() / ".local/share/debian-trixie-setup/shims"
 
 # whiptail en modo texto. El lanzador lo pone al principio del PATH solo para
 # los scripts que ejecuta dentro de su ventana. Lee y escribe en /dev/tty (el
@@ -642,6 +641,10 @@ class Launcher(QWidget):
 
         if item.get("local"):
             script = ROOT / item["script"]
+            if not script.is_file():
+                QMessageBox.critical(self, "Script no encontrado",
+                                     f"No existe el script:\n{script}")
+                return False
             comando = (
                 f"bash {str(script)!r}; rc=$?; "
                 'echo; echo "El script terminó con código $rc."; '
@@ -841,7 +844,7 @@ def main():
         return 1
     try:
         window = Launcher(CONFIG)
-    except (OSError, ValueError, KeyError) as err:
+    except OSError as err:
         QMessageBox.critical(None, "Error de configuración",
                              f"No se pudo iniciar la configuración de Trixie:\n{err}")
         return 1
