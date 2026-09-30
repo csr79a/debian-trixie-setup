@@ -406,8 +406,8 @@ step_ensure_flatpak() {
     # -- es la forma correcta de que este paso también sirva como
     # actualización en corridas futuras del script, no solo como
     # instalación inicial.
-    if ! sudo apt install -y flatpak; then
-        log_err "No se pudo instalar/actualizar flatpak. Los pasos que dependen de él (ProtonPlus, MangoJuice) van a fallar."
+    if ! sudo apt install -y flatpak curl git ca-certificates; then
+        log_err "No se pudo instalar/actualizar flatpak, curl, git o ca-certificates. Los pasos que dependen de ellos (ProtonPlus, Heroic, MangoHud y Winetricks) pueden fallar."
         return 1
     fi
     log_ok "flatpak instalado/actualizado"
@@ -656,16 +656,12 @@ step_mangohud_compile_nvml() {
     # meson de abajo fuerza un PKG_CONFIG_PATH estándar de Debian.
     #
     # wayland-protocols / libgbm-dev: tampoco están cubiertos por 'apt
-    # build-dep mangohud', por el mismo motivo -- ese build-dep refleja
-    # las dependencias del paquete VIEJO de Debian, mientras que 'git
-    # clone' de abajo trae la rama por defecto de upstream (sin fijar
-    # tag/versión). La reescritura de upstream ("MangoHud next") fue
-    # agregando dependencias nuevas de a una: primero wayland-protocols
-    # (backend Wayland), después gbm/libgbm-dev (backend de render). Como
-    # el script no fija una versión del repo, esto puede volver a pasar
-    # con otra dependencia nueva que upstream agregue en el futuro -- si
-    # eso ocurre, agregar el paquete que pida meson en el error a esta
-    # lista es la solución (mismo patrón cada vez).
+    # build-dep mangohud', porque ese build-dep refleja las dependencias
+    # del paquete Debian y no necesariamente todas las dependencias de la
+    # versión de MangoHud que se compila desde el tag upstream seleccionado.
+    # Si Meson detecta otra dependencia nueva en el futuro, el bloque de
+    # resolución automática de abajo intenta localizar el paquete Debian
+    # que proporciona el .pc correspondiente y repetir la compilación.
     if ! sudo apt install -y libcap-dev libyaml-cpp-dev libwayland-egl-backend-dev wayland-protocols libgbm-dev; then
         log_err "No se pudieron instalar las dependencias de compilación (libcap-dev/libyaml-cpp-dev/libwayland-egl-backend-dev/wayland-protocols/libgbm-dev). Se aborta la compilación de MangoHud; el resto del script continúa."
         return 1
@@ -697,18 +693,13 @@ step_mangohud_compile_nvml() {
         sudo ninja -C build install
     }
 
-    # Resuelve automáticamente dependencias de meson que falten, del tipo
-    # 'Dependency "X" not found'. Esto pasa seguido porque 'git clone' de
-    # arriba trae la rama por defecto de upstream SIN fijar tag/versión,
-    # y la reescritura de upstream ("MangoHud next") fue agregando
-    # requisitos nuevos de a uno (ya se vio en la práctica con
-    # wayland-protocols, gbm y egl). En vez de mantener a mano una lista
-    # fija de paquetes en el script (que se desactualiza cada vez que
-    # upstream suma un requisito), esta función usa apt-file para
-    # averiguar qué paquete Debian provee el archivo <dependencia>.pc y
-    # lo instala. apt-file update solo se corre una vez por ejecución del
-    # script (variable de control en el enclosing scope), no en cada
-    # reintento.
+    # Resuelve automáticamente dependencias de Meson que falten, del tipo
+    # 'Dependency "X" not found'. Como la compilación usa un tag upstream
+    # de MangoHud, sus requisitos pueden diferir de los del paquete Debian.
+    # En vez de mantener una lista fija que puede quedar obsoleta, esta
+    # función usa apt-file para averiguar qué paquete Debian proporciona el
+    # archivo <dependencia>.pc y lo instala. apt-file update solo se ejecuta
+    # una vez por ejecución del script, no en cada reintento.
     local apt_file_updated=0
     local tried_pkgs=""
     _mangohud_resolve_missing_meson_deps() {
@@ -876,29 +867,18 @@ step_gamemode_mangohud() {
 # 6. Winetricks (script oficial vía GitHub) + Protontricks (vía pipx, con GUI)
 # ---------------------------------------------------------------------------
 #
-# Winetricks se instala como script desde su repositorio oficial. Protontricks
-# se instala mediante pipx y se añade su integración gráfica .desktop.
+# Winetricks se instala como script desde su repositorio oficial.
+# Protontricks se instala mediante pipx y se añade su integración gráfica
+# .desktop.
 #
-# Wine del sistema NO se instala automáticamente. La rama Trixie actual puede
-# no ofrecer wine/wine64/wine32 y el repositorio WineHQ configurado puede
-# pertenecer a otra suite. Mezclar esas suites puede producir conflictos de
-# dependencias i386, por lo que este script no añade WineHQ ni fuerza Wine.
+# Wine del sistema NO se instala automáticamente. El script no añade ni
+# mezcla repositorios WineHQ con Trixie porque una combinación de suites
+# puede producir conflictos de dependencias i386.
 # Proton/Steam trae su propio Wine y no necesita el Wine del sistema.
 #
 # Si el usuario ya tiene Wine instalado, _ensure_wineserver_in_path() intenta
 # hacer disponible wineserver si fuese necesario. Si no hay Wine, Winetricks
 # queda instalado pero su gestión de prefixes normales requiere Wine/wineserver.
-# Wine del sistema NO se instala automáticamente.
-#
-# Debian Trixie 13 puede no publicar actualmente wine/wine64/wine32, y el
-# repositorio WineHQ que el usuario tenga configurado puede apuntar a otra
-# suite (por ejemplo, trixie). Este script NO mezcla suites ni añade WineHQ
-# silenciosamente, porque eso puede producir dependencias i386 incompatibles.
-#
-# Winetricks necesita un Wine/wineserver funcional para gestionar prefixes
-# Wine normales. Si el usuario ya tiene Wine instalado, intentamos exponer
-# wineserver si fuese necesario. Si no lo tiene, se informa como opcional:
-# Proton/Steam no necesita el Wine del sistema.
 _ensure_wineserver_in_path() {
     local link="/usr/local/bin/wineserver" real="" candidate dpkg_list version
 
@@ -932,7 +912,7 @@ _ensure_wineserver_in_path() {
     fi
     hash -r
 
-    if version="$(wineserver --version 2>/dev/null)" && [[ -n "$version" ]]; then
+    if version="$(wineserver --version 2>&1)" && [[ -n "$version" ]]; then
         log_ok "wineserver disponible (${version})"
     else
         log_warn "El enlace ${link} se creó pero 'wineserver --version' no responde."
@@ -1494,10 +1474,10 @@ step_lutris() {
 # 14. Gamescope (opcional, paquete de apt)
 # ---------------------------------------------------------------------------
 #
-# Micro-compositor de Valve para escalado y pantalla completa. Está en el
-# componente 'contrib' de Debian. Es situacional, así que solo se instala
-# si se responde que sí; con GPU híbrida NVIDIA puede requerir pruebas
-# según el juego.
+# Micro-compositor de Valve para escalado y pantalla completa. En este
+# proyecto se instala explícitamente desde trixie-backports para usar la
+# versión disponible allí. Es situacional, así que solo se instala si se
+# responde que sí; con GPU híbrida NVIDIA puede requerir pruebas según el juego.
 step_gamescope() {
     log_step "14/14 · Gamescope (opcional, Trixie Backports)"
 
@@ -1572,7 +1552,7 @@ step_final_checks() {
         MANUAL_STEPS+=("Si necesitas prefixes Wine normales fuera de Steam, instala una versión de Wine compatible con tu rama de Debian antes de usar Winetricks para ellos.")
     fi
 
-    if command -v wineserver &>/dev/null && version="$(wineserver --version 2>/dev/null)" && [[ -n "$version" ]]; then
+    if command -v wineserver &>/dev/null && version="$(wineserver --version 2>&1)" && [[ -n "$version" ]]; then
         _chk OK "wineserver: ${version} ($(command -v wineserver))"
     else
         _chk WARN "wineserver: no disponible (Winetricks no podrá gestionar prefixes Wine normales todavía)"
@@ -1780,7 +1760,8 @@ step_summary() {
         echo "    de esta sesión. Abre una terminal nueva (o ejecuta 'source ~/.bashrc')"
         echo "    para poder usar el comando directamente."
     fi
-    echo "  - Gamescope, si lo instalas, se obtiene explícitamente desde trixie-backports."\necho "  - No se forzó la instalación de Wine del sistema: Debian Trixie 13 puede no"
+    echo "  - Gamescope, si lo instalas, se obtiene explícitamente desde trixie-backports."
+    echo "  - No se forzó la instalación de Wine del sistema: Debian Trixie 13 puede no"
     echo "    ofrecer un candidato compatible y mezclar WineHQ de otra suite puede"
     echo "    provocar conflictos i386. Proton no necesita el Wine del sistema."
     echo "  - Winetricks tiene GUI, pero necesita un Wine/wineserver funcional para"
