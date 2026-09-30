@@ -44,6 +44,8 @@ Incluye una limpieza específica de lanzadores `.desktop` de Steam que puedan qu
 - Debian GNU/Linux 13 (Trixie).
 - Una sesión de usuario normal; los scripts solicitan `sudo` cuando necesitan privilegios.
 - Conexión a Internet para descargar paquetes y código fuente.
+- El instalador garantiza las herramientas auxiliares `curl`, `git` y
+  `ca-certificates` antes de los pasos que las utilizan.
 - Repositorios APT de Trixie correctamente configurados.
 - El instalador configura `trixie-backports` si no existe, sin tocar una configuración de Backports que ya tengas.
 - Protontricks se instala mediante `pipx` y su GUI mediante `protontricks-desktop-install`.
@@ -78,13 +80,18 @@ Para Protontricks, que no aparezcan juegos inmediatamente no significa necesaria
 
 ## Gamescope y Trixie Backports
 
-Gamescope no se toma del repositorio estable principal de Trixie en este proyecto. Si eliges instalarlo, se obtiene explícitamente de `trixie-backports` mediante `apt install -t trixie-backports gamescope`.
+Gamescope se obtiene explícitamente de `trixie-backports` mediante
+`apt install -t trixie-backports gamescope` cuando eliges instalarlo.
 
 El instalador solo elimina durante la limpieza el fichero de Backports que él mismo haya creado y que lleve su marca. Si ya tenías Backports configurado, no lo elimina.
 
 ## MangoHud
 
-MangoHud se compila desde fuente con soporte NVML (`-Dwith_nvml=enabled`). El proyecto no sustituye esta compilación por el paquete `mangohud` de Debian.
+MangoHud se compila desde fuente con soporte NVML (`-Dwith_nvml=enabled`).
+El instalador consulta el último tag estable de upstream y fija ese tag al
+clonar el repositorio, en lugar de compilar la rama por defecto.
+Si Meson detecta una dependencia adicional, el script intenta resolverla
+automáticamente mediante `apt-file`.
 
 ## Wine y Winetricks
 
@@ -188,7 +195,7 @@ gaming/
 
 ## Documentación
 
-- [Manual completo](gaming/docs/MANUAL.md)
+- [Manual completo](docs/MANUAL.md)
 - [Desinstalación y limpieza](gaming/docs/DESINSTALACION.md)
 
 ## Filosofía del proyecto
