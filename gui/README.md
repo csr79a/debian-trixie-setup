@@ -20,18 +20,11 @@ Los componentes externos se descargan/actualizan en:
 
 La aplicación usa **PyQt6** y mantiene un **único pseudo-terminal (PTY)** dentro de la ventana.
 
-Esto es importante para `sudo`: la autenticación se realiza dentro del mismo PTY que posteriormente utilizan los scripts. De esta forma, la credencial temporal de sudo pertenece al mismo terminal y los comandos `sudo` de los instaladores pueden reutilizarla.
+Esto permite que `sudo`, `read` y otras preguntas interactivas se comporten como en un terminal real. La salida del script se muestra en la ventana y el campo inferior permite enviar respuestas.
 
-La ventana incluye abajo:
+La contraseña de `sudo` no se almacena en un archivo ni se escribe deliberadamente en el historial del shell. Cuando la salida del script parece solicitar una contraseña, el campo cambia temporalmente a modo oculto.
 
-- campo gráfico **Contraseña de sudo**;
-- botón **Autenticar**;
-- terminal integrada;
-- botones para Sistema, Limpieza, Gaming, NVIDIA y ASUS ROG.
-
-La contraseña no se guarda en un archivo ni se escribe deliberadamente en el historial del shell. El campo se limpia inmediatamente después de pulsar **Autenticar**.
-
-El terminal integrado conserva la interacción de los scripts, incluidos `sudo`, `whiptail` y las preguntas normales de los instaladores.
+El lanzador incluye un shim propio de `whiptail` para las cajas simples `--yesno`, `--msgbox` e `--infobox`. Los menús, listas, campos de entrada y otros diálogos que no puede representar el shim se ejecutan en **Konsole**.
 
 ## Instalar el lanzador
 
@@ -50,10 +43,9 @@ El instalador comprueba e instala automáticamente:
 
 - Python 3
 - `python3-pyqt6`
-- `python3-pyte`
 - Git
 
-No se necesita GTK, VTE, Konsole ni otro emulador de terminal externo.
+**Konsole** o `x-terminal-emulator` solo son necesarios cuando un script necesita una interfaz de terminal que el modo integrado no puede representar, por ejemplo menús o listas de `whiptail`/`dialog`.
 
 ## Ejecución directa
 
@@ -64,4 +56,11 @@ python3 -m py_compile gui/debian-trixie-gui.py
 python3 gui/debian-trixie-gui.py
 ```
 
-La aplicación debe ejecutarse como usuario normal, no como root.
+La aplicación debe ejecutarse como usuario normal, no como root. Los scripts solicitan `sudo` cuando necesitan privilegios.
+
+## Comportamiento de las acciones
+
+- **Sistema** y **Gaming** son acciones locales: ejecutan directamente los scripts incluidos en este repositorio.
+- **NVIDIA** y **ASUS ROG** son acciones remotas: clonan o actualizan sus repositorios en `~/.local/share/debian-trixie-setup/components/` antes de ejecutar el script indicado.
+- Las acciones marcadas como peligrosas muestran una confirmación antes de ejecutarse.
+- El instalador verifica la sintaxis del GUI con `python3 -m py_compile` antes de crear el `.desktop`.
