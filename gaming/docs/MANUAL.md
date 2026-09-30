@@ -25,6 +25,9 @@ chmod +x gaming/setup-gaming-debian-trixie.sh
 ```
 
 El instalador utiliza `sudo` cuando necesita modificar el sistema.
+Antes de los pasos que descargan o compilan componentes, también garantiza
+las herramientas auxiliares necesarias (`curl`, `git` y
+`ca-certificates`).
 
 ## 3. Qué instala o configura
 
@@ -140,7 +143,10 @@ gamemoderun %command%
 
 MangoHud proporciona un overlay con información de rendimiento.
 
-El proyecto puede compilarlo desde fuente para disponer de soporte NVML cuando corresponde a una GPU NVIDIA.
+El proyecto consulta el último tag estable de MangoHud y lo compila desde ese tag
+para disponer de soporte NVML cuando corresponde a una GPU NVIDIA. Si Meson
+detecta una dependencia adicional, el instalador intenta localizar el paquete
+Debian correspondiente mediante `apt-file`.
 
 Una comprobación básica:
 
@@ -182,7 +188,8 @@ El wrapper no presupone que el perfil anterior fuese `balanced`; intenta restaur
 
 ## 10. Gamescope y Backports
 
-Si eliges Gamescope, el instalador comprueba `trixie-backports` y utiliza explícitamente:
+Si eliges Gamescope, el instalador comprueba `trixie-backports` y utiliza explícitamente
+la versión de ese repositorio:
 
 ```bash
 sudo apt install -y -t trixie-backports gamescope
