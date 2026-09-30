@@ -21,6 +21,12 @@
 #                                      # incluidas operaciones destructivas; ver --help)
 #
 # Historial de versiones:
+#   1.4.1 - Corrige el seguimiento de Firefox/zram y alinea la documentación:
+#           * Firefox ESR solo se purga después de instalar correctamente
+#             Firefox de Mozilla; el resumen final refleja cada resultado.
+#           * El repositorio de Mozilla usa siempre el formato deb822
+#             (mozilla.sources), apropiado para Debian Trixie.
+#           * El resumen de zram solo aparece si zram quedó configurado.
 #   1.4.0 - Separa el hardware externo del setup base:
 #           * NVIDIA deja de instalarse desde este script y pasa a
 #             csr79a/nvidia-debian-setup.
@@ -92,7 +98,7 @@
 set -euo pipefail
 
 TITLE="Configurador de Debian Trixie csr79a"
-VERSION="1.4.0"
+VERSION="1.4.1"
 
 log()   { echo -e "\e[1;34m[*]\e[0m $*"; }
 ok()    { echo -e "\e[1;32m[OK]\e[0m $*"; }
@@ -526,6 +532,7 @@ fi
 TOTAL_RAM_KB="$(grep -m1 '^MemTotal:' /proc/meminfo | awk '{print $2}')"
 TOTAL_RAM_MB=$(( TOTAL_RAM_KB / 1024 ))
 ZRAM_SIZE_MB=$(( TOTAL_RAM_MB / 2 ))
+ZRAM_CONFIGURED=0
 
 # Salvaguarda: si por lo que sea no se pudo leer /proc/meminfo o el
 # cálculo da 0, no se propone zram en vez de configurar un tamaño inválido.
@@ -579,6 +586,7 @@ else
         ok "Configurado ${SIZE_VAR}=${ZRAM_SIZE_MB} (${ZRAM_SIZE_MB} MiB) en $ZRAM_CONF"
         sudo systemctl restart zramswap.service 2>/dev/null || sudo service zramswap restart \
           || warn "No se pudo reiniciar zramswap; la nueva configuración se aplicará tras reiniciar."
+        ZRAM_CONFIGURED=1
 
         log "Estado actual del zram:"
         zramctl 2>/dev/null || true
@@ -627,27 +635,24 @@ fi
 # procedimiento que publica Mozilla para paquetes .deb vía su propio
 # repositorio APT: https://support.mozilla.org/kb/install-firefox-linux
 #
-# Adaptado respecto a la guía original de Mozilla:
+# Adaptado respecto a la guía oficial de Mozilla:
 #   - Se omite todo lo específico de Ubuntu/snap (no aplica en Debian).
-#   - Se elige automáticamente el formato de fichero de repositorio
-#     correcto: deb822 (mozilla.sources) para trixie y posteriores, o
-#     el formato clásico de una línea (mozilla.list) para codenames
-#     anteriores (p. ej. bookworm), por si se ejecuta ahí bajo tu
-#     propio riesgo tras el aviso de compatibilidad de la sección 1.
+#   - Debian Trixie usa el formato moderno deb822 (mozilla.sources).
 #   - Se verifica la huella digital de la clave de firma antes de
-#     confiar en ella; si no coincide, se aborta este paso sin tocar
-#     nada más (no se añade el repositorio ni se instala nada).
+#     confiar en ella; si no coincide, se aborta este paso sin instalar
+#     Firefox ni tocar ESR o sus perfiles.
 #
 # NOTA sobre el orden (cambiado en la 1.2.0, portado desde
 # setup-debian-sid.sh): el objetivo es quedarse SOLO con Firefox de
 # Mozilla, sin conservar nada de ESR (paquete, configuración ni
 # perfiles). El orden es deliberado:
-#   1) se descarga y verifica la clave de Mozilla, se añade su repositorio
-#      y se comprueba que está disponible (pasos no destructivos);
-#   2) solo si todo eso sale bien se elimina ESR con todos sus datos;
-#   3) por último se instala Firefox.
-# Así, un fallo de red o de verificación no deja el equipo sin navegador
-# ni sin perfil.
+#   1) se descarga y verifica la clave de Mozilla;
+#   2) se añade el repositorio y se actualizan los índices de APT;
+#   3) se instala Firefox de Mozilla;
+#   4) solo si Firefox se instala correctamente se purga ESR y se eliminan
+#      sus perfiles/datos.
+# Así, un fallo de red, verificación o instalación no deja el equipo sin
+# Firefox ESR ni sin sus perfiles.
 #
 # AVISO: a diferencia de la 1.1.0 (que usaba _cleanup_profiles_ini para
 # intentar conservar el perfil antiguo), aquí se elimina por completo
@@ -660,10 +665,14 @@ MOZILLA_PROFILES_DIR="$HOME/.mozilla/firefox"
 ESR_PROFILES_REMOVED=0
 ESR_PURGE_FAILED=0
 FIREFOX_INSTALL_FAILED=0
+FIREFOX_REQUESTED=0
+MOZILLA_KEY_OK=0
 
 if [[ "$WGET_OK" -ne 1 ]]; then
   warn "Falta 'wget' (necesario para descargar la clave de Mozilla) y no se pudo instalar. Se omite la sustitución de Firefox."
 elif confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del repositorio de Mozilla?\n\nAVISO: si Firefox ESR está instalado, se eliminarán también su configuración (/etc/firefox-esr) y TODOS sus perfiles y datos en ~/.mozilla/firefox (marcadores, contraseñas, historial, extensiones). Es irreversible. Firefox normal empezará con un perfil limpio." 18 76; then
+
+  FIREFOX_REQUESTED=1
 
   FIREFOX_ESR_PKGS=()
   for pkg in firefox-esr firefox-esr-l10n-es; do
@@ -672,7 +681,6 @@ elif confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del reposito
     fi
   done
 
-  MOZILLA_KEY_OK=0
   MOZILLA_READY=0
 
   # --- 1) Clave de Mozilla: descarga y verificación de la huella ---
@@ -723,26 +731,19 @@ elif confirm "¿Sustituir Firefox ESR de Debian por Firefox oficial del reposito
     fi
   fi
 
-  # --- 2) Repositorio de Mozilla: formato según el codename detectado en
-  # la sección 1 (trixie/posteriores usan deb822; codenames anteriores,
-  # el formato clásico de una línea) ---
+  # --- 2) Repositorio de Mozilla en formato deb822 ---
+  # Debian Trixie y posteriores usan mozilla.sources según la guía oficial
+  # de Mozilla. Este script está diseñado específicamente para Trixie.
   if [[ "$MOZILLA_KEY_OK" -eq 1 ]]; then
-    if [[ "${VERSION_CODENAME:-trixie}" == "bookworm" || "${VERSION_CODENAME:-trixie}" == "bullseye" ]]; then
-      MOZILLA_LIST="/etc/apt/sources.list.d/mozilla.list"
-      echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" \
-        | sudo tee "$MOZILLA_LIST" >/dev/null
-      ok "Repositorio de Mozilla escrito en $MOZILLA_LIST (formato clásico)."
-    else
-      MOZILLA_SOURCES="/etc/apt/sources.list.d/mozilla.sources"
-      sudo tee "$MOZILLA_SOURCES" >/dev/null <<'EOF'
+    MOZILLA_SOURCES="/etc/apt/sources.list.d/mozilla.sources"
+    sudo tee "$MOZILLA_SOURCES" >/dev/null <<'EOF'
 Types: deb
 URIs: https://packages.mozilla.org/apt
 Suites: mozilla
 Components: main
 Signed-By: /etc/apt/keyrings/packages.mozilla.org.asc
 EOF
-      ok "Repositorio de Mozilla escrito en $MOZILLA_SOURCES (formato deb822)."
-    fi
+    ok "Repositorio de Mozilla escrito en $MOZILLA_SOURCES (formato deb822)."
 
     # Prioridad para que los paquetes de Mozilla no se vean eclipsados
     # por otro repo que también publique "firefox".
@@ -870,17 +871,6 @@ Notas:
     disponibles para cualquier aplicación (LibreOffice, navegadores,
     etc.).
 
-  - Si configuraste zram, comprueba su estado cuando quieras con:
-      zramswap status
-      swapon --show
-    Para desactivarlo más adelante:
-      sudo systemctl disable --now zramswap
-      sudo apt remove zram-tools
-    La configuración previa (si existía) quedó respaldada junto a
-    /etc/default/zramswap con un sufijo .bak.<fecha>.
-    Si además ajustaste vm.swappiness, comprueba el valor activo con:
-      sudo sysctl vm.swappiness
-
   - Si instalaste Firefox desde el repositorio de Mozilla, comprueba
     la versión con: firefox --version (debería ser una versión release,
     no "esr" en el nombre). Para revertir a Firefox ESR de Debian:
@@ -900,6 +890,22 @@ Notas:
     revisarla o revertir el cambio.
 EOF
 
+if [[ "${ZRAM_CONFIGURED:-0}" -eq 1 ]]; then
+  cat <<'EOF'
+
+  - ZRAM quedó configurado. Comprueba su estado cuando quieras con:
+      zramswap status
+      swapon --show
+    Para desactivarlo más adelante:
+      sudo systemctl disable --now zramswap
+      sudo apt remove zram-tools
+    La configuración previa (si existía) quedó respaldada junto a
+    /etc/default/zramswap con un sufijo .bak.<fecha>.
+    Si además ajustaste vm.swappiness, comprueba el valor activo con:
+      sudo sysctl vm.swappiness
+EOF
+fi
+
 if [[ "${ESR_PROFILES_REMOVED:-0}" -eq 1 ]]; then
   cat <<'EOF'
 
@@ -912,6 +918,12 @@ fi
 
 
 
+
+if [[ "${FIREFOX_REQUESTED:-0}" -eq 1 && "${MOZILLA_KEY_OK:-0}" -ne 1 ]]; then
+  echo
+  echo "  - ATENCIÓN: no se pudo verificar correctamente la clave de Mozilla;"
+  echo "    no se instaló Firefox de Mozilla ni se tocó Firefox ESR."
+fi
 
 if [[ "${FULL_UPGRADE_FAILED:-0}" -eq 1 ]]; then
   echo
@@ -930,8 +942,8 @@ fi
 
 if [[ "${FIREFOX_INSTALL_FAILED:-0}" -eq 1 ]]; then
   echo
-  echo "  - ATENCIÓN: no se pudo instalar Firefox de Mozilla (Firefox ESR ya se"
-  echo "    había eliminado si estaba instalado). Reintenta con:"
+  echo "  - ATENCIÓN: no se pudo instalar Firefox de Mozilla; Firefox ESR y sus"
+  echo "    perfiles no se han tocado. Reintenta con:"
   echo "      sudo apt update && sudo apt install firefox"
 fi
 
