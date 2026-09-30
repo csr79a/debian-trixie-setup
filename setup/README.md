@@ -8,8 +8,11 @@ para discos/particiones), fuentes de Windows y de Ubuntu (opcional), el
 microcode correcto según el fabricante de CPU, un dispositivo zram de swap
 comprimido en RAM con tamaño calculado automáticamente según la RAM total
 (opcional), la sustitución de Firefox ESR por el
-Firefox oficial de Mozilla (opcional), el driver propietario de NVIDIA si
-se detecta una GPU compatible (opcional), y añade el remoto de Flathub.
+Firefox oficial de Mozilla (opcional), y añade el remoto de Flathub.
+
+**NVIDIA y ASUS no se instalan desde este script.** Son componentes externos
+que se mantienen en sus propios repositorios y se lanzan desde el GUI del
+proyecto.
 
 ---
 
@@ -59,7 +62,7 @@ El script ejecuta, en orden, los siguientes pasos:
     para zram (ver [sección dedicada](#zram-swap-comprimido-en-ram-tamaño-automático)).
 11. Pregunta si quieres sustituir Firefox ESR por el **Firefox oficial de
     Mozilla** (ver [sección dedicada](#firefox-oficial-de-mozilla)).
-13. Muestra notas finales (p. ej. sobre `fd-find`, Synaptic, fuentes, zram,
+12. Muestra el resumen y las notas finales (p. ej. sobre `fd-find`, Synaptic, fuentes, zram,
     Firefox y el sources.list clásico neutralizado).
 
 ---
@@ -316,11 +319,9 @@ paquetes `.deb`, con estas adaptaciones respecto al texto original:
 - **Se omite todo lo específico de Ubuntu/snap** (fijar `firefox` desde
   snap, pines de prioridad negativa para el paquete snap, etc.) — no
   aplica en Debian.
-- **Formato de repositorio detectado automáticamente**: usa el formato
-  moderno **deb822** (`mozilla.sources`) en trixie y posteriores, o el
-  formato clásico de una línea (`mozilla.list`) si el script se está
-  ejecutando en un codename anterior (p. ej. bookworm) tras aceptar el
-  aviso de compatibilidad de la sección 1.
+- **Formato deb822 para Trixie**: escribe `/etc/apt/sources.list.d/mozilla.sources`,
+  siguiendo la documentación actual de Mozilla para Debian Trixie y
+  posteriores. Este proyecto está diseñado específicamente para Trixie.
 - **Verificación de huella digital no omitible**: si la huella de la
   clave descargada no coincide exactamente con la publicada por Mozilla
   (`35BAA0B33E9EB396F59CA838C0BA5CE6DC6315A3`), el script **aborta este
@@ -330,18 +331,19 @@ paquetes `.deb`, con estas adaptaciones respecto al texto original:
 
 ### Qué hace el script exactamente
 
-1. Si `firefox-esr` (y/o `firefox-esr-l10n-es`) está instalado, lo quita.
-2. Crea `/etc/apt/keyrings` si no existe y descarga la clave de firma de
-   Mozilla ahí.
-3. Verifica la huella digital de esa clave contra el valor oficial.
-4. Si coincide, añade el repositorio de Mozilla (`mozilla.sources` o
-   `mozilla.list`, según el caso) y un fichero de prioridad
-   (`/etc/apt/preferences.d/mozilla`) para que sus paquetes tengan
-   preferencia frente a cualquier otro repo que también publique algo
-   llamado `firefox`.
-5. Ejecuta `apt update` e instala `firefox`.
-6. Pregunta, aparte, si quieres instalar también el paquete de idioma
-   español (`firefox-l10n-es`).
+1. Si confirmas la sustitución, detecta si `firefox-esr` y/o
+   `firefox-esr-l10n-es` están instalados, pero **todavía no los elimina**.
+2. Crea `/etc/apt/keyrings` si no existe, descarga la clave de firma de
+   Mozilla y verifica su huella digital contra el valor oficial.
+3. Si la clave coincide, añade `/etc/apt/sources.list.d/mozilla.sources`
+   en formato deb822 y el fichero de prioridad
+   `/etc/apt/preferences.d/mozilla`.
+4. Ejecuta `apt update` e intenta instalar `firefox`.
+5. **Solo si Firefox se instala correctamente**, purga Firefox ESR y elimina
+   `/etc/firefox-esr` cuando corresponde, y borra
+   `~/.mozilla/firefox` para evitar conservar los perfiles/datos de ESR.
+6. Pregunta, aparte, si quieres instalar el paquete de idioma español
+   disponible en el repositorio de Mozilla.
 
 ### Comprobar y revertir
 
